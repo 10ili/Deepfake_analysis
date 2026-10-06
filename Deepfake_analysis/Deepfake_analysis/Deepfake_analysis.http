@@ -1,0 +1,151 @@
+@Deepfake_analysis_HostAddress = http://localhost:5075
+# Вставьте сюда значение "token" из ответа на запрос входа
+@AdminToken = <токен администратора>
+@UserToken = <токен пользователя>
+
+### Вход администратора
+POST {{Deepfake_analysis_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "login": "admin",
+  "password": "admin123"
+}
+
+### Вход обычного пользователя
+POST {{Deepfake_analysis_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "login": "user",
+  "password": "user123"
+}
+
+### 401: отчёт без токена
+GET {{Deepfake_analysis_HostAddress}}/api/reports/detectors
+
+### 403: добавление данных с токеном обычного пользователя
+POST {{Deepfake_analysis_HostAddress}}/api/images
+Authorization: Bearer {{UserToken}}
+Content-Type: application/json
+
+{
+  "fileName": "forbidden.png",
+  "sizeBytes": 1000,
+  "width": 100,
+  "height": 100
+}
+
+### Изображения
+GET {{Deepfake_analysis_HostAddress}}/api/images
+Accept: application/json
+
+###
+GET {{Deepfake_analysis_HostAddress}}/api/images?extension=png
+Accept: application/json
+
+###
+POST {{Deepfake_analysis_HostAddress}}/api/images
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "fileName": "avatar_dalle.png",
+  "sizeBytes": 1850000,
+  "width": 1024,
+  "height": 1024
+}
+
+###
+PUT {{Deepfake_analysis_HostAddress}}/api/images/4
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "fileName": "passport_scan_v2.png",
+  "sizeBytes": 3300000,
+  "width": 2480,
+  "height": 3508
+}
+
+###
+DELETE {{Deepfake_analysis_HostAddress}}/api/images/4
+Authorization: Bearer {{AdminToken}}
+
+### Детекторы
+GET {{Deepfake_analysis_HostAddress}}/api/detectors?active=true
+Accept: application/json
+
+###
+POST {{Deepfake_analysis_HostAddress}}/api/detectors
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "name": "EfficientNet-B3 (строгий порог)",
+  "architecture": "EfficientNet-B3",
+  "threshold": 0.7,
+  "isActive": true
+}
+
+###
+PUT {{Deepfake_analysis_HostAddress}}/api/detectors/2
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "name": "ResNet50 (сквозное обучение)",
+  "architecture": "ResNet50",
+  "threshold": 0.65,
+  "isActive": true
+}
+
+###
+DELETE {{Deepfake_analysis_HostAddress}}/api/detectors/2
+Authorization: Bearer {{AdminToken}}
+
+### Результаты анализа
+GET {{Deepfake_analysis_HostAddress}}/api/analyses?verdict=Generated
+Accept: application/json
+
+###
+POST {{Deepfake_analysis_HostAddress}}/api/analyses
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "imageId": 4,
+  "detectorId": 1,
+  "realProbability": 0.18,
+  "entropy": 4.02,
+  "concentration": 0.105,
+  "stdDeviation": 0.131,
+  "criticalRegion": "Center",
+  "anomalyType": "TextureAndNoise"
+}
+
+###
+DELETE {{Deepfake_analysis_HostAddress}}/api/analyses/7
+Authorization: Bearer {{AdminToken}}
+
+### Отчёты
+GET {{Deepfake_analysis_HostAddress}}/api/reports/analyses
+Authorization: Bearer {{UserToken}}
+Accept: application/json
+
+###
+GET {{Deepfake_analysis_HostAddress}}/api/reports/detectors
+Authorization: Bearer {{UserToken}}
+Accept: application/json
+
+###
+GET {{Deepfake_analysis_HostAddress}}/api/reports/images
+Authorization: Bearer {{UserToken}}
+Accept: application/json
+
+###
+GET {{Deepfake_analysis_HostAddress}}/api/reports/disagreements
+Authorization: Bearer {{UserToken}}
+Accept: application/json
+
+###
