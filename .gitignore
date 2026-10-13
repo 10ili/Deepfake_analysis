@@ -335,6 +335,11 @@ paket-files/
 __pycache__/
 *.pyc
 
+# Обучение нейросети: окружение, датасет и веса в репозиторий не кладём
+training/.venv/
+training/data/
+training/checkpoints/
+
 # Cake - Uncomment if you are using it
 # tools/**
 # !tools/packages.config
@@ -480,3 +485,4 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+training/README.md
