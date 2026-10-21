@@ -6,6 +6,11 @@ prob <= 0.5 означает, что изображение сгенериров
 Обучение идёт в два этапа:
   1. head     — свёрточная часть заморожена, учится только новый выходной слой;
   2. finetune — разморожена вся сеть, дообучение с низкой скоростью.
+
+Защита от перекоса датасета: все настоящие фото в нём — JPEG, а около трети
+сгенерированных — PNG. Чтобы сеть не выучила «нет следов JPEG-сжатия → подделка»,
+обучающие картинки пересохраняются в JPEG (см. --jpeg-prob). Тест считается дважды:
+на картинках как есть и на пересжатых, плюс точность отдельно по PNG и прочим подделкам.
 """
 import argparse
 import io
@@ -29,6 +34,8 @@ LABELS = {"fake": 0.0, "real": 1.0}
 IMAGE_SIZE = 300
 THRESHOLD = 0.5
 MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
+JPEG_QUALITY = (65, 95)  # диапазон качества при пересжатии обучающих картинок
+TEST_JPEG_QUALITY = 90   # качество при пересжатии тестовых картинок
 
 # В датасете есть очень большие и слегка повреждённые файлы — читаем их без ошибок.
 Image.MAX_IMAGE_PIXELS = None
@@ -65,6 +72,28 @@ class ZipImages(Dataset):
             return self[(index + 1) % len(self)]
 
         return self.transform(image), label
+
+
+class RandomJpeg:
+    """С заданной вероятностью пересохраняет картинку в JPEG со случайным качеством.
+
+    После этого следы JPEG-сжатия есть у картинок обоих классов, и формат исходного
+    файла перестаёт подсказывать ответ. Делается до сжатия до 300x300, пока следы
+    исходного сжатия ещё не размыты.
+    """
+
+    def __init__(self, probability, quality):
+        self.probability = probability
+        self.quality = quality
+
+    def __call__(self, image):
+        if torch.rand(1).item() >= self.probability:
+            return image
+        quality = int(torch.randint(self.quality[0], self.quality[1] + 1, (1,)))
+        buffer = io.BytesIO()
+        image.save(buffer, "JPEG", quality=quality)
+        buffer.seek(0)
+        return Image.open(buffer).convert("RGB")
 
 
 def list_samples(names, split, limit):
@@ -170,6 +199,13 @@ def evaluate(model, loader, device):
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
 
+    # Если сеть смотрит на формат файла, подделки-PNG она узнаёт заметно лучше остальных.
+    is_png = torch.tensor([Path(name).suffix.lower() == ".png" for name, _ in loader.dataset.samples])
+    correct = said_generated == is_generated
+
+    def group_accuracy(mask):
+        return correct[mask].float().mean().item() if mask.any() else None
+
     return {
         "loss": nn.functional.binary_cross_entropy_with_logits(logits, labels).item(),
         "accuracy": (tp + tn) / len(labels),
@@ -181,12 +217,21 @@ def evaluate(model, loader, device):
         "generated_as_real": fn,
         "real_as_generated": fp,
         "real_as_real": tn,
+        "accuracy_generated_png": group_accuracy(is_generated & is_png),
+        "accuracy_generated_other": group_accuracy(is_generated & ~is_png),
+        "accuracy_real": group_accuracy(~is_generated),
     }
 
 
 def format_metrics(metrics):
+    def share(value):
+        return "—" if value is None else f"{value:.4f}"
+
     return (f"accuracy {metrics['accuracy']:.4f}  f1 {metrics['f1']:.4f}  "
-            f"roc-auc {metrics['roc_auc']:.4f}  loss {metrics['loss']:.4f}")
+            f"roc-auc {metrics['roc_auc']:.4f}  loss {metrics['loss']:.4f}\n"
+            f"    по группам: подделки PNG {share(metrics['accuracy_generated_png'])}  "
+            f"прочие подделки {share(metrics['accuracy_generated_other'])}  "
+            f"настоящие {share(metrics['accuracy_real'])}")
 
 
 def parse_args():
@@ -198,6 +243,8 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--head-lr", type=float, default=1e-3)
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--jpeg-prob", type=float, default=1.0,
+                        help="доля обучающих картинок, пересохраняемых в JPEG (0 — без защиты, как в ВКР)")
     parser.add_argument("--val-share", type=float, default=0.1, help="доля train, отложенная для проверки")
     parser.add_argument("--workers", type=int, default=min(8, max(2, (os.cpu_count() or 4) - 2)),
                         help="процессов, читающих картинки")
@@ -253,7 +300,15 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize(MEAN, STD),
     ])
-    train_transform = transforms.Compose([transforms.RandomHorizontalFlip(), eval_transform])
+    train_transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        RandomJpeg(args.jpeg_prob, JPEG_QUALITY),
+        eval_transform,
+    ])
+    jpeg_test_transform = transforms.Compose([
+        RandomJpeg(1.0, (TEST_JPEG_QUALITY, TEST_JPEG_QUALITY)),
+        eval_transform,
+    ])
 
     def make_loader(samples, transform, training):
         return DataLoader(
@@ -267,6 +322,7 @@ def main():
     train_loader = make_loader(train_samples, train_transform, training=True)
     val_loader = make_loader(val_samples, eval_transform, training=False)
     test_loader = make_loader(test_samples, eval_transform, training=False)
+    jpeg_test_loader = make_loader(test_samples, jpeg_test_transform, training=False)
 
     model = build_model().to(device, memory_format=torch.channels_last)
     scaler = torch.amp.GradScaler(device.type, enabled=device.type == "cuda")
@@ -333,15 +389,18 @@ def main():
     shutil.copyfile(args.out / best["file"], best_path)
     model.load_state_dict(torch.load(best_path, map_location=device))
     test_metrics = evaluate(model, test_loader, device)
+    jpeg_test_metrics = evaluate(model, jpeg_test_loader, device)
 
     log(f"\nЛучшая эпоха: {best['epoch']} ({best['file']})")
     log(f"Тест (картинки, которых сеть не видела): {format_metrics(test_metrics)}")
+    log(f"Тот же тест, все пересохранены в JPEG {TEST_JPEG_QUALITY}: {format_metrics(jpeg_test_metrics)}")
     log(f"Итоговые веса: {best_path}")
 
     with open(args.out / "metrics.json", "w", encoding="utf-8") as file:
         json.dump({
             "best": best,
             "test": test_metrics,
+            "test_jpeg": jpeg_test_metrics,
             "history": history,
             "settings": {key: str(value) for key, value in vars(args).items()},
             "torch": torch.__version__,
