@@ -339,6 +339,7 @@ __pycache__/
 training/.venv/
 training/data/
 training/checkpoints/
+training/reference/*/*.bin
 
 # Cake - Uncomment if you are using it
 # tools/**
