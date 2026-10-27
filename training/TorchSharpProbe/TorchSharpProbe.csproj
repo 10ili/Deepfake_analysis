@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Этап 3: проба TorchSharp. Загружает TorchScript-модель и сверяет выход и градиенты с эталоном из reference.py. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- libtorch есть только 64-битная -->
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Версии связаны: TorchSharp 0.107.0 собран под libtorch 2.10.0, та же версия torch в training\.venv. -->
+    <PackageReference Include="TorchSharp" Version="0.107.0" />
+    <!-- Только сборка для Windows (~80 МБ); пакет TorchSharp-cpu тянул бы ещё Linux и macOS. -->
+    <PackageReference Include="libtorch-cpu-win-x64" Version="2.10.0" />
+  </ItemGroup>
+
+</Project>
