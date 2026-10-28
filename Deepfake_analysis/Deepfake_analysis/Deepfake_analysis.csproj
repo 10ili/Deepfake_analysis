@@ -4,11 +4,22 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- libtorch есть только 64-битная -->
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <!-- Нейросети. Версии связаны: TorchSharp 0.107.0 собран под libtorch 2.10.0. -->
+    <PackageReference Include="TorchSharp" Version="0.107.0" />
+    <!-- Только сборка для Windows (~80 МБ); пакет TorchSharp-cpu тянул бы ещё Linux и macOS. -->
+    <PackageReference Include="libtorch-cpu-win-x64" Version="2.10.0" />
+    <!-- Чтение картинок и операции тепловой карты. -->
+    <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
+    <!-- Модель CatBoost в формате ONNX. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
   </ItemGroup>
 
 </Project>

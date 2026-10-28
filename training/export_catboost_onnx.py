@@ -1,10 +1,7 @@
 """Переводит модель CatBoost в ONNX — формат, который в C# считает ONNX Runtime.
 
 На вход модели подаются 2048 признаков картинки от ResNet50 (их считает train_catboost.py),
-на выходе — метка и вероятности двух классов: [сгенерировано, настоящее].
-
-После сохранения скрипт сверяет ONNX Runtime с самим CatBoost на признаках теста из кэша
-(<папка модели>/features/test_*.npz): вероятности и итоговые ответы должны совпасть.
+на выходе — метка (label) и вероятности двух классов (probability_tensor): [сгенерировано, настоящее].
 
 Запуск: .venv\\Scripts\\python export_catboost_onnx.py
 """
@@ -13,9 +10,7 @@ import json
 import tempfile
 from pathlib import Path
 
-import numpy as np
 import onnx
-import onnxruntime
 from catboost import CatBoostClassifier
 
 ROOT = Path(__file__).resolve().parent
@@ -64,29 +59,6 @@ def main():
     onnx_model.save_model(str(out), format="onnx", export_parameters={"onnx_graph_name": "resnet50_catboost"})
     remove_zipmap(out)
     print(f"Сохранено: {out} ({out.stat().st_size / 2**20:.1f} МБ)")
-
-    session = onnxruntime.InferenceSession(str(out), providers=["CPUExecutionProvider"])
-    for kind, items in [("вход", session.get_inputs()), ("выход", session.get_outputs())]:
-        for item in items:
-            print(f"  {kind} {item.name}: {item.type} {item.shape}")
-
-    caches = sorted((args.model.parent / "features").glob("test_*.npz"))
-    if caches:
-        cached = np.load(caches[0])
-        features, labels = cached["features"], cached["labels"]
-        print(f"Сверка на {len(features)} картинках из {caches[0].name}")
-    else:
-        rng = np.random.default_rng(0)
-        features, labels = rng.random((1000, 2048), dtype=np.float32) * 3, None
-        print("Кэша признаков нет — сверка на 1000 случайных векторах")
-
-    onnx_label, onnx_probs = session.run(None, {session.get_inputs()[0].name: features.astype(np.float32)})
-    cb_probs = model.predict_proba(features)
-    cb_label = (cb_probs[:, 1] > 0.5).astype(np.int64)
-    print(f"  |Δ вероятности| до {np.abs(onnx_probs - cb_probs).max():.2e}, "
-          f"ответы различаются у {(onnx_label != cb_label).sum()} картинок")
-    if labels is not None:
-        print(f"  accuracy: ONNX {(onnx_label == labels).mean():.5f}, CatBoost {(cb_label == labels).mean():.5f}")
 
 
 if __name__ == "__main__":
