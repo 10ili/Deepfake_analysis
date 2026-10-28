@@ -11,7 +11,7 @@
 Файлы .bin — float32 little-endian, порядок C x H x W (как в PyTorch).
 В reference/ig_steps.json — точки и веса метода Гаусса–Лежандра, которым Captum считает интеграл.
 
-Запуск: .venv\\Scripts\\python reference.py --weights checkpoints\\efficientnet_b3_best.pth картинки...
+Запуск: .venv\\Scripts\\python reference.py --weights checkpoints\\efficientnet_b3\\efficientnet_b3_best.pth картинки...
 """
 import argparse
 import json
@@ -155,7 +155,7 @@ def save_ig_steps(out):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("images", type=Path, nargs="+")
-    parser.add_argument("--weights", type=Path, default=ROOT / "checkpoints" / "efficientnet_b3_best.pth")
+    parser.add_argument("--weights", type=Path, default=ROOT / "checkpoints" / "efficientnet_b3" / "efficientnet_b3_best.pth")
     parser.add_argument("--out", type=Path, default=ROOT / "reference")
     args = parser.parse_args()
 

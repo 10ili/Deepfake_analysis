@@ -1,3 +1,4 @@
 # torch и torchvision ставятся отдельно (см. setup.bat): сборка зависит от видеокарты
 pillow
 scikit-learn
+catboost

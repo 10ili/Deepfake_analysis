@@ -8,7 +8,7 @@ TorchScript сохраняет и веса, и сам граф вычислен�
 
 Версия torch должна совпадать с libtorch, на которой собран TorchSharp (TorchSharp 0.107.0 — libtorch 2.10.0).
 
-Запуск: .venv\\Scripts\\python export_torchscript.py --weights checkpoints\\efficientnet_b3_best.pth
+Запуск: .venv\\Scripts\\python export_torchscript.py --weights checkpoints\\efficientnet_b3\\efficientnet_b3_best.pth
 """
 import argparse
 from pathlib import Path
@@ -28,7 +28,7 @@ def output_and_gradient(model, x):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--weights", type=Path, default=ROOT / "checkpoints" / "efficientnet_b3_best.pth")
+    parser.add_argument("--weights", type=Path, default=ROOT / "checkpoints" / "efficientnet_b3" / "efficientnet_b3_best.pth")
     parser.add_argument("--out", type=Path, help="куда сохранить (по умолчанию рядом с весами)")
     parser.add_argument("--reference", type=Path, default=ROOT / "reference", help="папка с input.bin для сверки")
     args = parser.parse_args()

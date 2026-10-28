@@ -1,4 +1,4 @@
-"""Обучение EfficientNet-B3 для распознавания сгенерированных изображений.
+"""Обучение нейросети (EfficientNet-B3 или ResNet50) для распознавания сгенерированных изображений.
 
 Выход модели после сигмоиды — вероятность класса «Real»:
 prob <= 0.5 означает, что изображение сгенерировано.
@@ -6,6 +6,8 @@ prob <= 0.5 означает, что изображение сгенериров
 Обучение идёт в два этапа:
   1. head     — свёрточная часть заморожена, учится только новый выходной слой;
   2. finetune — разморожена вся сеть, дообучение с низкой скоростью.
+
+Сеть выбирается ключом --arch, веса сохраняются в checkpoints/<сеть>.
 
 Защита от перекоса датасета: все настоящие фото в нём — JPEG, а около трети
 сгенерированных — PNG. Чтобы сеть не выучила «нет следов JPEG-сжатия → подделка»,
@@ -31,7 +33,6 @@ from torchvision import models, transforms
 
 ROOT = Path(__file__).parent
 LABELS = {"fake": 0.0, "real": 1.0}
-IMAGE_SIZE = 300
 THRESHOLD = 0.5
 MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
 JPEG_QUALITY = (65, 95)  # диапазон качества при пересжатии обучающих картинок
@@ -78,7 +79,7 @@ class RandomJpeg:
     """С заданной вероятностью пересохраняет картинку в JPEG со случайным качеством.
 
     После этого следы JPEG-сжатия есть у картинок обоих классов, и формат исходного
-    файла перестаёт подсказывать ответ. Делается до сжатия до 300x300, пока следы
+    файла перестаёт подсказывать ответ. Делается до уменьшения картинки, пока следы
     исходного сжатия ещё не размыты.
     """
 
@@ -119,20 +120,36 @@ def split_train_val(samples, val_share, seed):
     return train, val
 
 
-def build_model():
+def build_efficientnet_b3():
     model = models.efficientnet_b3(weights=models.EfficientNet_B3_Weights.IMAGENET1K_V1)
     model.classifier[1] = nn.Linear(model.classifier[1].in_features, 1)
     return model
 
 
-def configure_stage(model, stage, args):
-    """Замораживает или размораживает свёрточную часть и создаёт оптимизатор этапа."""
+def build_resnet50():
+    model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
+    model.fc = nn.Linear(model.fc.in_features, 1)
+    return model
+
+
+# Для каждой сети: сторона входной картинки, как сеть создать и как называется
+# её выходной слой («голова»), который учится на этапе head.
+ARCHS = {
+    "efficientnet_b3": {"image_size": 300, "build": build_efficientnet_b3, "head": "classifier"},
+    "resnet50": {"image_size": 224, "build": build_resnet50, "head": "fc"},
+}
+
+
+def configure_stage(model, head, stage, args):
+    """Замораживает или размораживает всё, кроме головы, и создаёт оптимизатор этапа."""
     frozen = stage == "head"
-    for parameter in model.features.parameters():
+    for parameter in model.parameters():
         parameter.requires_grad = not frozen
+    for parameter in head.parameters():
+        parameter.requires_grad = True
 
     if frozen:
-        return torch.optim.Adam(model.classifier.parameters(), lr=args.head_lr), None
+        return torch.optim.Adam(head.parameters(), lr=args.head_lr), None
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
@@ -143,10 +160,11 @@ def to_device(images, device):
     return images.to(device, non_blocking=True).contiguous(memory_format=torch.channels_last)
 
 
-def train_epoch(model, loader, optimizer, scaler, device, stage, log):
+def train_epoch(model, head, loader, optimizer, scaler, device, stage, log):
     model.train()
     if stage == "head":
-        model.features.eval()  # замороженная часть не должна менять статистику BatchNorm
+        model.eval()  # замороженная часть не должна менять статистику BatchNorm
+        head.train()
 
     criterion = nn.BCEWithLogitsLoss()
     use_amp = device.type == "cuda"
@@ -187,7 +205,15 @@ def evaluate(model, loader, device):
         logits.append(output.squeeze(1).float().cpu())
         labels.append(batch_labels.float())
 
-    logits, labels = torch.cat(logits), torch.cat(labels)
+    names = [name for name, _ in loader.dataset.samples]
+    return compute_metrics(torch.cat(logits), torch.cat(labels), names)
+
+
+def compute_metrics(logits, labels, names):
+    """Метрики по выходам модели до сигмоиды (logits) и меткам; names — имена файлов.
+
+    «Положительным» считается класс «сгенерировано».
+    """
     real_probability = torch.sigmoid(logits)
     said_generated = real_probability <= THRESHOLD
     is_generated = labels == LABELS["fake"]
@@ -200,7 +226,7 @@ def evaluate(model, loader, device):
     recall = tp / (tp + fn) if tp + fn else 0.0
 
     # Если сеть смотрит на формат файла, подделки-PNG она узнаёт заметно лучше остальных.
-    is_png = torch.tensor([Path(name).suffix.lower() == ".png" for name, _ in loader.dataset.samples])
+    is_png = torch.tensor([Path(name).suffix.lower() == ".png" for name in names])
     correct = said_generated == is_generated
 
     def group_accuracy(mask):
@@ -237,7 +263,8 @@ def format_metrics(metrics):
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data", type=Path, default=ROOT / "data" / "dataset.zip", help="архив с датасетом")
-    parser.add_argument("--out", type=Path, default=ROOT / "checkpoints", help="куда сохранять веса")
+    parser.add_argument("--arch", choices=ARCHS, default="efficientnet_b3", help="какую сеть обучать")
+    parser.add_argument("--out", type=Path, help="куда сохранять веса (по умолчанию checkpoints/<сеть>)")
     parser.add_argument("--head-epochs", type=int, default=1, help="эпох на этапе с замороженной сетью")
     parser.add_argument("--epochs", type=int, default=5, help="эпох на этапе полного дообучения")
     parser.add_argument("--batch-size", type=int, default=32)
@@ -255,6 +282,7 @@ def parse_args():
                         help="быстрая проверка, что всё работает: мало картинок, по одной эпохе")
     args = parser.parse_args()
 
+    args.out = args.out or ROOT / "checkpoints" / args.arch
     if args.smoke:
         args.limit = args.limit or 64
         args.head_epochs, args.epochs = 1, 1
@@ -292,11 +320,14 @@ def main():
     test_samples = list_samples(names, "test", args.limit)
     if not train_samples or not val_samples or not test_samples:
         raise SystemExit("В архиве не найдены папки train/fake, train/real, test/fake, test/real.")
+    log(f"Сеть: {args.arch}")
     log(f"Картинок: обучение {len(train_samples)}, проверка {len(val_samples)}, тест {len(test_samples)}")
 
-    # То же преобразование, что при анализе картинки: сжатие до 300x300 и нормализация ImageNet.
+    # То же преобразование, что при анализе картинки: сжатие до квадрата нужного сети
+    # размера (300x300 или 224x224) и нормализация ImageNet.
+    size = ARCHS[args.arch]["image_size"]
     eval_transform = transforms.Compose([
-        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+        transforms.Resize((size, size)),
         transforms.ToTensor(),
         transforms.Normalize(MEAN, STD),
     ])
@@ -324,7 +355,8 @@ def main():
     test_loader = make_loader(test_samples, eval_transform, training=False)
     jpeg_test_loader = make_loader(test_samples, jpeg_test_transform, training=False)
 
-    model = build_model().to(device, memory_format=torch.channels_last)
+    model = ARCHS[args.arch]["build"]().to(device, memory_format=torch.channels_last)
+    head = getattr(model, ARCHS[args.arch]["head"])
     scaler = torch.amp.GradScaler(device.type, enabled=device.type == "cuda")
 
     plan = [("head", n) for n in range(1, args.head_epochs + 1)] + \
@@ -336,6 +368,8 @@ def main():
         if not last_path.exists():
             raise SystemExit(f"Нечего продолжать: {last_path} не найден.")
         saved = torch.load(last_path, map_location=device)
+        if saved.get("arch", "efficientnet_b3") != args.arch:
+            raise SystemExit(f"{last_path} — от сети {saved.get('arch')}, а запущена {args.arch}.")
         model.load_state_dict(saved["model"])
         scaler.load_state_dict(saved["scaler"])
         history, best, first = saved["history"], saved["best"], saved["done"]
@@ -345,7 +379,7 @@ def main():
     for index in range(first, len(plan)):
         if plan[index][0] != stage:
             stage = plan[index][0]
-            optimizer, scheduler = configure_stage(model, stage, args)
+            optimizer, scheduler = configure_stage(model, head, stage, args)
             if saved and saved["stage"] == stage:
                 optimizer.load_state_dict(saved["optimizer"])
                 if scheduler:
@@ -356,7 +390,7 @@ def main():
         total = args.head_epochs if stage == "head" else args.epochs
         log(f"\n[{stage}] эпоха {epoch}/{total}, скорость обучения {optimizer.param_groups[0]['lr']:.2e}")
         started = time.time()
-        train_loss = train_epoch(model, train_loader, optimizer, scaler, device, stage, log)
+        train_loss = train_epoch(model, head, train_loader, optimizer, scaler, device, stage, log)
         metrics = evaluate(model, val_loader, device)
         if scheduler:
             scheduler.step()
@@ -366,12 +400,13 @@ def main():
         history.append(record)
 
         if stage == "finetune":
-            path = args.out / f"efficientnet_b3_finetuned_epoch{epoch}.pth"
+            path = args.out / f"{args.arch}_finetuned_epoch{epoch}.pth"
             torch.save(model.state_dict(), path)
             if best is None or metrics["accuracy"] > best["accuracy"]:
                 best = {**record, "file": path.name}
 
         torch.save({
+            "arch": args.arch,
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "scheduler": scheduler.state_dict() if scheduler else None,
@@ -385,7 +420,7 @@ def main():
     if best is None:
         raise SystemExit("Этап finetune не выполнялся (--epochs 0), итоговых весов нет.")
 
-    best_path = args.out / "efficientnet_b3_best.pth"
+    best_path = args.out / f"{args.arch}_best.pth"
     shutil.copyfile(args.out / best["file"], best_path)
     model.load_state_dict(torch.load(best_path, map_location=device))
     test_metrics = evaluate(model, test_loader, device)
