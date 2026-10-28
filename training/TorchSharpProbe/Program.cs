@@ -1,14 +1,15 @@
 // Этап 3: проверяем, что нейросеть работает в C# так же, как в Python.
 //
-// Для каждой папки reference/<имя>/ (их создал training/reference.py):
-//   1) берём готовый вход сети input.bin (3x300x300 после предобработки) и считаем logit —
+// Для каждой папки reference/<сеть>/<имя>/ (их создал training/reference.py):
+//   1) берём готовый вход сети input.bin (3xNxN после предобработки) и считаем logit —
 //      он должен совпасть с "logit" из result.json;
 //   2) считаем Integrated Gradients так же, как Captum (40 точек Гаусса–Лежандра из ig_steps.json,
 //      базовая линия baseline.bin) — атрибуции должны совпасть с attr.bin.
 // Второй пункт проверяет главное: что TorchSharp умеет считать градиенты по входу (ONNX Runtime этого не умеет).
 // Декодирование картинок и метрики тепловой карты сюда не входят — это этап 4.
 //
-// Запуск из папки проекта: dotnet run -c Release [-- --model <файл.pt>] [--reference <папка>] [--threads N]
+// Запуск из папки проекта: dotnet run -c Release [-- --arch efficientnet_b3|resnet50] [--model <файл.pt>]
+//                                                [--reference <папка>] [--threads N]
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -20,8 +21,10 @@ const double LogitTolerance = 1e-3;     // допустимая разница l
 const double AttrTolerance = 1e-3;      // допустимая разница атрибуций относительно их максимума
 
 var options = ParseArgs(args);
-var modelPath = options.GetValueOrDefault("model", Path.Combine("..", "checkpoints", "checkpoints", "efficientnet_b3.torchscript.pt"));
-var referenceDir = options.GetValueOrDefault("reference", Path.Combine("..", "reference"));
+var arch = options.GetValueOrDefault("arch", "efficientnet_b3");
+var size = arch == "resnet50" ? 224 : 300;   // сторона входа сети
+var modelPath = options.GetValueOrDefault("model", Path.Combine("..", "checkpoints", arch, $"{arch}.torchscript.pt"));
+var referenceDir = options.GetValueOrDefault("reference", Path.Combine("..", "reference", arch));
 var threads = int.Parse(options.GetValueOrDefault("threads", "4"));
 
 torch.set_num_threads(threads);
@@ -33,7 +36,7 @@ model.eval();
 Console.WriteLine($"Модель загружена: {Path.GetFullPath(modelPath)}");
 
 // Точки (alphas) и веса (step_sizes) интеграла — те же, что использовал Captum.
-using var stepsJson = JsonDocument.Parse(File.ReadAllText(Path.Combine(referenceDir, "ig_steps.json")));
+using var stepsJson = JsonDocument.Parse(File.ReadAllText(Path.Combine(referenceDir, "..", "ig_steps.json")));
 var alphas = stepsJson.RootElement.GetProperty("alphas").EnumerateArray().Select(e => e.GetDouble()).ToArray();
 var stepSizes = stepsJson.RootElement.GetProperty("step_sizes").EnumerateArray().Select(e => e.GetDouble()).ToArray();
 
@@ -49,9 +52,9 @@ foreach (var folder in Directory.GetDirectories(referenceDir).Order())
     var name = expected.RootElement.GetProperty("file").GetString();
     var expectedLogit = expected.RootElement.GetProperty("logit").GetDouble();
 
-    var input = ReadTensor(Path.Combine(folder, "input.bin"), 1, 3, 300, 300);
-    var baseline = ReadTensor(Path.Combine(folder, "baseline.bin"), 1, 3, 300, 300);
-    var expectedAttr = ReadTensor(Path.Combine(folder, "attr.bin"), 1, 3, 300, 300);
+    var input = ReadTensor(Path.Combine(folder, "input.bin"), 1, 3, size, size);
+    var baseline = ReadTensor(Path.Combine(folder, "baseline.bin"), 1, 3, size, size);
+    var expectedAttr = ReadTensor(Path.Combine(folder, "attr.bin"), 1, 3, size, size);
 
     // 1) Прямой проход: logit и вероятность «Real».
     double logit;
