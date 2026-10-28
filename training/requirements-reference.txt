@@ -1,4 +1,4 @@
-# Окружение для reference.py и export_torchscript.py (на процессоре, видеокарта не нужна):
+# Окружение для reference.py, export_torchscript.py и export_catboost_onnx.py (на процессоре, видеокарта не нужна):
 #   py -3.12 -m venv .venv
 #   .venv\Scripts\python -m pip install torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cpu
 #   .venv\Scripts\python -m pip install -r requirements-reference.txt
@@ -8,3 +8,6 @@ opencv-python==5.0.0
 scipy==1.18.1
 numpy==2.5.2
 pillow
+catboost==1.2.10
+onnx==1.23.2
+onnxruntime==1.31.1
