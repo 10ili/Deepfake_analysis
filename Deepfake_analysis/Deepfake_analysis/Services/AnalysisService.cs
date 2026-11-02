@@ -57,12 +57,18 @@ namespace Deepfake_analysis.Services
         public async Task<byte[]> GetHeatmapAsync(int id, bool overlay)
         {
             var analysis = await GetAsync(id);
-            if (!analysis.HasHeatmap)
+            switch (analysis.Status)
             {
-                throw new NotFoundException(analysis.Status == AnalysisStatus.Completed
-                    ? "Детектор этого анализа не строит тепловую карту."
-                    : $"Тепловая карта появится, когда анализ завершится. Сейчас: {analysis.Status}.");
+                // Ещё считается: карта будет, но позже — это конфликт состояния (409), а не «нет такой» (404).
+                case AnalysisStatus.Queued or AnalysisStatus.Running:
+                    throw new ConflictException(
+                        $"Анализ ещё не завершён (сейчас: {analysis.Status}). Тепловая карта появится после окончания расчёта.");
+                case AnalysisStatus.Failed:
+                    throw new NotFoundException($"Анализ завершился ошибкой, тепловой карты нет. Причина: {analysis.Error}");
             }
+
+            if (!analysis.HasHeatmap)
+                throw new NotFoundException("Детектор этого анализа не строит тепловую карту.");
 
             // Select выбирает из базы только одну нужную картинку, а не обе.
             return await db.Heatmaps

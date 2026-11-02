@@ -21,8 +21,6 @@ namespace Deepfake_analysis.Models
         [JsonIgnore]
         public string PasswordHash { get; private set; } = string.Empty;
 
-        public bool IsAdmin => Role == Roles.Admin;
-
         /// <summary>Сохраняет не сам пароль, а его хеш с солью.</summary>
         public void SetPassword(string password)
         {

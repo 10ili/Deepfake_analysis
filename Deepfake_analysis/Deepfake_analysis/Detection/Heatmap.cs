@@ -17,9 +17,6 @@ namespace Deepfake_analysis.Detection
         public ImageRegion CriticalRegion { get; init; }
         public AnomalyType AnomalyType { get; init; }
 
-        /// <summary>Средняя активация в клетках сетки 3x3 (строка, столбец).</summary>
-        public double[,] Grid { get; init; } = new double[3, 3];
-
         /// <summary>Карта в цветах JET размером с исходную картинку, PNG.</summary>
         public byte[] HeatmapPng { get; init; } = [];
 
@@ -57,11 +54,6 @@ namespace Deepfake_analysis.Detection
             };
             var bestRegion = regionMeans.First(r => r.Value == regionMeans.Values.Max()).Key;
 
-            var grid = new double[3, 3];
-            for (var i = 0; i < 3; i++)
-                for (var j = 0; j < 3; j++)
-                    grid[i, j] = Mean(map, width, i * hs, (i + 1) * hs, j * ws, (j + 1) * ws);
-
             // Тип аномалии: где сосредоточена карта — на контурах (Canny + расширение 5x5) или на ровных участках.
             var edgeMask = EdgeMask(rgb);
             double edgeScore = 0, flatScore = 0;
@@ -88,13 +80,16 @@ namespace Deepfake_analysis.Detection
                 StdDeviation = std,
                 CriticalRegion = bestRegion,
                 AnomalyType = anomalyType,
-                Grid = grid,
                 HeatmapPng = heatmapPng,
                 OverlayPng = overlayPng,
             };
         }
 
-        /// <summary>Среднее по каналам от положительной части атрибуций: учитываем только то, что «за» ответ.</summary>
+        /// <summary>
+        /// Среднее по каналам от положительной части атрибуций. Сеть выдаёт одно число — уверенность в том,
+        /// что картинка настоящая, — поэтому положительные атрибуции отмечают пиксели, которые эту уверенность
+        /// повышают. Карта показывает именно их, при любом вердикте.
+        /// </summary>
         private static float[] PositiveMean(Tensor attributions, int size)
         {
             var attr = attributions.data<float>().ToArray();

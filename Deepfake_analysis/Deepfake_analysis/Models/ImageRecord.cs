@@ -5,6 +5,12 @@ namespace Deepfake_analysis.Models
     {
         public const long MaxSizeBytes = 20 * 1024 * 1024;
 
+        /// <summary>
+        /// Минимальная ширина и высота в пикселях. У совсем маленькой картинки метрики карты теряют смысл:
+        /// зона в треть картинки — это пара пикселей, а «1% самых ярких пикселей» — ни одного.
+        /// </summary>
+        public const int MinSidePixels = 32;
+
         private static readonly string[] SupportedExtensions = [".jpg", ".jpeg", ".png"];
 
         public int Id { get; set; }
@@ -39,6 +45,16 @@ namespace Deepfake_analysis.Models
 
             reason = null;
             return true;
+        }
+
+        /// <summary>Проверяет размеры картинки; они известны только после того, как файл прочитан.</summary>
+        public bool HasEnoughResolution(out string? reason)
+        {
+            var enough = Width >= MinSidePixels && Height >= MinSidePixels;
+            reason = enough
+                ? null
+                : $"Картинка {Width}x{Height} слишком маленькая: ширина и высота должны быть не меньше {MinSidePixels} пикселей.";
+            return enough;
         }
 
         /// <summary>

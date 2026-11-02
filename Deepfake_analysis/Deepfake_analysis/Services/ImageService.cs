@@ -62,6 +62,9 @@ namespace Deepfake_analysis.Services
                 throw new BadRequestException(ex.Message);
             }
 
+            if (!image.HasEnoughResolution(out reason))
+                throw new BadRequestException(reason!);
+
             // Две записи (описание и содержимое) сохраняются в одной транзакции: либо обе, либо ни одной.
             await using var transaction = await db.Database.BeginTransactionAsync();
             db.Images.Add(image);

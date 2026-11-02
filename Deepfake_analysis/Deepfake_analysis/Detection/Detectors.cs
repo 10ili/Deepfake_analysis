@@ -18,25 +18,17 @@ namespace Deepfake_analysis.Detection
     /// <summary>Модель, которая по картинке RGB выдаёт вероятность «Real».</summary>
     public interface IImageDetector : IDisposable
     {
-        /// <summary>Короткое имя модели, например efficientnet_b3.</summary>
-        string Key { get; }
-
-        bool HasHeatmap { get; }
-
         DetectionResult Analyze(Mat rgb);
     }
 
     /// <summary>Нейросеть с одним выходом (EfficientNet-B3 или ResNet50): вероятность и тепловая карта.</summary>
-    public sealed class NeuralNetworkDetector(string key, string modelPath, int inputSize) : IImageDetector
+    public sealed class NeuralNetworkDetector(string modelPath, int inputSize) : IImageDetector
     {
-        private readonly jit.ScriptModule<Tensor, Tensor> _model = LoadModel(modelPath);
+        private readonly jit.ScriptModule<Tensor, Tensor> _model = TorchScriptModel.Load(modelPath);
         private readonly Lock _lock = new();
 
-        public string Key { get; } = key;
-        public bool HasHeatmap => true;
-
-        public static NeuralNetworkDetector EfficientNetB3(string modelPath) => new("efficientnet_b3", modelPath, 300);
-        public static NeuralNetworkDetector ResNet50(string modelPath) => new("resnet50", modelPath, 224);
+        public static NeuralNetworkDetector EfficientNetB3(string modelPath) => new(modelPath, 300);
+        public static NeuralNetworkDetector ResNet50(string modelPath) => new(modelPath, 224);
 
         public DetectionResult Analyze(Mat rgb)
         {
@@ -63,13 +55,6 @@ namespace Deepfake_analysis.Detection
 
         // Сигмоида превращает ответ сети (любое число) в вероятность от 0 до 1.
         private static double Sigmoid(double logit) => 1f / (1f + MathF.Exp(-(float)logit));
-
-        private static jit.ScriptModule<Tensor, Tensor> LoadModel(string path)
-        {
-            var model = torch.jit.load<Tensor, Tensor>(path);
-            model.eval();
-            return model;
-        }
     }
 
     /// <summary>
@@ -80,12 +65,9 @@ namespace Deepfake_analysis.Detection
     {
         private const int InputSize = 224;
 
-        private readonly jit.ScriptModule<Tensor, Tensor> _features = LoadModel(featuresModelPath);
+        private readonly jit.ScriptModule<Tensor, Tensor> _features = TorchScriptModel.Load(featuresModelPath);
         private readonly InferenceSession _catBoost = new(catBoostModelPath);
         private readonly Lock _lock = new();
-
-        public string Key => "resnet50_catboost";
-        public bool HasHeatmap => false;
 
         public DetectionResult Analyze(Mat rgb) =>
             new() { RealProbability = PredictProbability(ExtractFeatures(rgb)) };
@@ -115,11 +97,21 @@ namespace Deepfake_analysis.Detection
             _features.Dispose();
             _catBoost.Dispose();
         }
+    }
 
-        private static jit.ScriptModule<Tensor, Tensor> LoadModel(string path)
+    internal static class TorchScriptModel
+    {
+        /// <summary>
+        /// Загружает сеть TorchScript для работы, а не для обучения: режим eval и веса без градиентов.
+        /// Без этого каждый обратный проход Integrated Gradients считал бы ещё и градиенты всех весов сети
+        /// и копил бы их в памяти. Градиент по самой картинке нужен — он по-прежнему считается.
+        /// </summary>
+        public static jit.ScriptModule<Tensor, Tensor> Load(string path)
         {
             var model = torch.jit.load<Tensor, Tensor>(path);
             model.eval();
+            foreach (var parameter in model.parameters())
+                parameter.requires_grad_(false);
             return model;
         }
     }

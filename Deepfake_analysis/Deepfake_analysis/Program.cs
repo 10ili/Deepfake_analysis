@@ -11,7 +11,15 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
-var builder = WebApplication.CreateBuilder(args);
+// Корень приложения — папка, где ищутся appsettings.json, модели (models/) и база deepfake.db.
+// При разработке (Visual Studio, dotnet run) это папка проекта. Релизный exe берёт свою собственную папку,
+// поэтому его можно запускать откуда угодно — в том числе из консоли, открытой в другой папке.
+var isDevelopment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == Environments.Development;
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = isDevelopment ? null : AppContext.BaseDirectory,
+});
 
 // Add services to the container.
 
@@ -21,7 +29,7 @@ var jwt = jwtSection.Get<JwtOptions>() ?? new JwtOptions();
 builder.Services.Configure<JwtOptions>(jwtSection);
 builder.Services.AddSingleton<TokenService>();
 
-// База данных: файл SQLite. Относительный путь считается от папки приложения, а не от текущей папки консоли.
+// База данных: файл SQLite. Относительный путь считается от корня приложения (см. выше).
 var connection = new SqliteConnectionStringBuilder(builder.Configuration.GetConnectionString("Default"));
 connection.DataSource = Path.GetFullPath(connection.DataSource, builder.Environment.ContentRootPath);
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connection.ToString()));

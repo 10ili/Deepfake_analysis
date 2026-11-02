@@ -35,7 +35,7 @@ namespace Deepfake_analysis.Detection
             _logger = logger;
             var o = options.Value;
 
-            // Относительные пути считаются от папки приложения.
+            // Относительные пути считаются от корня приложения (см. Program.cs).
             string Full(string path) => Path.GetFullPath(path, environment.ContentRootPath);
             _files = new()
             {
