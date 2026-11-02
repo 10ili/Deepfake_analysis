@@ -2,13 +2,95 @@
   "info": {
     "_postman_id": "f37099a6-201b-4665-bc96-317d9d918d13",
     "name": "Deepfake analysis API",
-    "description": "Запросы для проверки Web API распознавания сгенерированных изображений.\n\nТокены получаются автоматически перед первым запросом и хранятся в переменных коллекции. Коллекцию можно запустить целиком (Run collection): запросы идут в нужном порядке.",
+    "description": "Запросы для проверки Web API распознавания сгенерированных изображений.\n\nТокены получаются автоматически перед первым запросом и хранятся в переменных коллекции. Коллекцию можно запустить целиком (Run collection): запросы идут в нужном порядке, а запрос «Дождаться результата» сам повторяется, пока фоновый анализ не завершится.\n\nДля загрузки файлов укажите папку с коллекцией как рабочую: Settings → General → Working directory (картинки лежат в подпапке images).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Автовход: если токенов ещё нет или они старше 50 минут (живут 60),",
+          "// перед запросом получаем новые. Поэтому любой запрос можно выполнять отдельно.",
+          "const issuedAt = Number(pm.collectionVariables.get(\"tokensIssuedAt\") || 0);",
+          "const fresh = Date.now() - issuedAt < 50 * 60 * 1000;",
+          "const isLoginRequest = pm.request.url.getPath().endsWith(\"/auth/login\");",
+          "",
+          "function login(user, password, variable) {",
+          "    pm.sendRequest({",
+          "        url: pm.collectionVariables.get(\"baseUrl\") + \"/api/auth/login\",",
+          "        method: \"POST\",",
+          "        header: { \"Content-Type\": \"application/json\" },",
+          "        body: { mode: \"raw\", raw: JSON.stringify({ login: user, password: password }) }",
+          "    }, function (err, res) {",
+          "        if (err || res.code !== 200) {",
+          "            console.error(\"Автовход не удался для \" + user + \". Запущен ли сервер по адресу baseUrl?\");",
+          "            return;",
+          "        }",
+          "        pm.collectionVariables.set(variable, res.json().token);",
+          "        pm.collectionVariables.set(\"tokensIssuedAt\", Date.now());",
+          "    });",
+          "}",
+          "",
+          "if (!fresh && !isLoginRequest) {",
+          "    login(\"admin\", \"admin123\", \"adminToken\");",
+          "    login(\"user\", \"user123\", \"userToken\");",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5075"
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "userToken",
+      "value": ""
+    },
+    {
+      "key": "tokensIssuedAt",
+      "value": "0"
+    },
+    {
+      "key": "imageId",
+      "value": ""
+    },
+    {
+      "key": "secondImageId",
+      "value": ""
+    },
+    {
+      "key": "detectorId",
+      "value": ""
+    },
+    {
+      "key": "analysisId",
+      "value": ""
+    },
+    {
+      "key": "catBoostAnalysisId",
+      "value": ""
+    },
+    {
+      "key": "lastAnalysisId",
+      "value": ""
+    },
+    {
+      "key": "waitAttempts",
+      "value": "0"
+    }
+  ],
   "item": [
     {
       "name": "1. Авторизация",
-      "description": "Получение токенов. Токены сами сохраняются в переменные коллекции adminToken и userToken.",
+      "description": "Вход по логину и паролю. Токен живёт 60 минут.",
       "item": [
         {
           "name": "Вход администратора",
@@ -23,10 +105,11 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    pm.collectionVariables.set(\"adminToken\", pm.response.json().token);",
                   "    pm.test(\"Роль Admin\", function () {",
                   "        pm.expect(pm.response.json().role).to.eql(\"Admin\");",
                   "    });",
+                  "    pm.collectionVariables.set(\"adminToken\", pm.response.json().token);",
+                  "    pm.collectionVariables.set(\"tokensIssuedAt\", Date.now());",
                   "}"
                 ]
               }
@@ -79,10 +162,10 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    pm.collectionVariables.set(\"userToken\", pm.response.json().token);",
                   "    pm.test(\"Роль User\", function () {",
                   "        pm.expect(pm.response.json().role).to.eql(\"User\");",
                   "    });",
+                  "    pm.collectionVariables.set(\"userToken\", pm.response.json().token);",
                   "}"
                 ]
               }
@@ -123,7 +206,7 @@
           "response": []
         },
         {
-          "name": "Неверный пароль — 401",
+          "name": "Неверный пароль → 401",
           "event": [
             {
               "listen": "test",
@@ -174,9 +257,485 @@
       ]
     },
     {
-      "name": "2. Изображения",
-      "description": "CRUD изображений. Чтение открыто всем, изменение — только администратору.",
+      "name": "2. Детекторы",
+      "description": "Детектор = обученная модель (EfficientNetB3, ResNet50, ResNet50CatBoost) + порог вердикта. Чтение открыто всем, изменение — только администратору.",
       "item": [
+        {
+          "name": "Список детекторов",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Есть три модели\", function () {",
+                  "        const models = pm.response.json().map(d => d.model);",
+                  "        pm.expect(models).to.include.members([\"EfficientNetB3\", \"ResNet50\", \"ResNet50CatBoost\"]);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/detectors",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "detectors"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Только активные (Where)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Все активные\", function () {",
+                  "        pm.response.json().forEach(d => pm.expect(d.isActive).to.be.true);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/detectors?active=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "detectors"
+              ],
+              "query": [
+                {
+                  "key": "active",
+                  "value": "true"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Детектор по id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/detectors/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "detectors",
+                "1"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Создать детектор",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    pm.collectionVariables.set(\"detectorId\", pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/detectors",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "detectors"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"EfficientNet-B3 (строгий порог)\",\n  \"model\": \"EfficientNetB3\",\n  \"threshold\": 0.8,\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Изменить порог детектора",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Порог изменён, детектор отключён\", function () {",
+                  "        pm.expect(pm.response.json().threshold).to.eql(0.9);",
+                  "        pm.expect(pm.response.json().isActive).to.be.false;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/detectors/{{detectorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "detectors",
+                "{{detectorId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"EfficientNet-B3 (строгий порог)\",\n  \"model\": \"EfficientNetB3\",\n  \"threshold\": 0.9,\n  \"isActive\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Детектор без модели → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/detectors",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "detectors"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Без модели\",\n  \"threshold\": 0.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Изображения",
+      "description": "Загрузка файлов JPEG/PNG до 20 МБ (form-data, поле file). Тестовые картинки лежат в папке images рядом с коллекцией; в Postman укажите эту папку как рабочую (Settings → General → Working directory) или выберите файл вручную в поле file.",
+      "item": [
+        {
+          "name": "Загрузить JPEG",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    pm.collectionVariables.set(\"imageId\", pm.response.json().id);",
+                  "    pm.test(\"Размеры определены сервером\", function () {",
+                  "        pm.expect(pm.response.json().width).to.eql(800);",
+                  "        pm.expect(pm.response.json().height).to.eql(600);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "images"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "images/sample.jpg"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Загрузить PNG",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    pm.collectionVariables.set(\"secondImageId\", pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "images"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "images/sample.png"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Не картинка → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 400) {",
+                  "    pm.test(\"Причина: не является изображением\", function () {",
+                  "        pm.expect(pm.response.json().detail).to.include(\"не является изображением\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "images"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "images/not_an_image.jpg"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
         {
           "name": "Список изображений",
           "event": [
@@ -258,6 +817,52 @@
           "response": []
         },
         {
+          "name": "Поиск по имени",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Нашлись загруженные\", function () {",
+                  "        pm.expect(pm.response.json().length).to.be.at.least(2);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/images?search=sample",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "images"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "sample"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Изображение по id",
           "event": [
             {
@@ -279,80 +884,21 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/images/1",
+              "raw": "{{baseUrl}}/api/images/{{imageId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "images",
-                "1"
+                "{{imageId}}"
               ]
             }
           },
           "response": []
         },
         {
-          "name": "Добавить изображение",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Код ответа 201\", function () {",
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 201) {",
-                  "    pm.collectionVariables.set(\"imageId\", pm.response.json().id);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/images",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "images"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fileName\": \"avatar_dalle.png\",\n  \"sizeBytes\": 1850000,\n  \"width\": 1024,\n  \"height\": 1024\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Изменить изображение",
+          "name": "Скачать файл изображения",
           "event": [
             {
               "listen": "test",
@@ -361,7 +907,55 @@
                 "exec": [
                   "pm.test(\"Код ответа 200\", function () {",
                   "    pm.response.to.have.status(200);",
-                  "});"
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Это JPEG\", function () {",
+                  "        pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"image/jpeg\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/images/{{imageId}}/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "images",
+                "{{imageId}}",
+                "file"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Переименовать",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Имя изменено\", function () {",
+                  "        pm.expect(pm.response.json().fileName).to.eql(\"test_photo.jpg\");",
+                  "    });",
+                  "}"
                 ]
               }
             }
@@ -397,7 +991,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fileName\": \"avatar_dalle_v2.png\",\n  \"sizeBytes\": 1850000,\n  \"width\": 1024,\n  \"height\": 1024\n}",
+              "raw": "{\n  \"fileName\": \"test_photo.jpg\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -408,7 +1002,311 @@
           "response": []
         },
         {
-          "name": "Неподдерживаемый формат — 400",
+          "name": "Сменить расширение → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 400) {",
+                  "    pm.test(\"Причина: Расширение файла менять нельзя\", function () {",
+                  "        pm.expect(pm.response.json().detail).to.include(\"Расширение файла менять нельзя\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/images/{{imageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "images",
+                "{{imageId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"test_photo.png\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Анализ нейросетью",
+      "description": "Анализ идёт в фоне: POST сразу отвечает 202 Accepted со статусом Queued, результат появляется по GET /api/analyses/{id} (Queued → Running → Completed). EfficientNet-B3 и ResNet50 считают ~15 с на картинку, CatBoost — около секунды.",
+      "item": [
+        {
+          "name": "Запустить EfficientNet-B3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 202\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 202) {",
+                  "    pm.collectionVariables.set(\"analysisId\", pm.response.json().id);",
+                  "    pm.test(\"Поставлен в очередь\", function () {",
+                  "        pm.expect(pm.response.json().status).to.eql(\"Queued\");",
+                  "        pm.expect(pm.response.headers.get(\"Location\")).to.include(\"/api/Analyses/\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imageId\": {{imageId}},\n  \"detectorId\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Запустить ResNet50",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 202\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imageId\": {{imageId}},\n  \"detectorId\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Запустить ResNet50 + CatBoost",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 202\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 202) {",
+                  "    pm.collectionVariables.set(\"catBoostAnalysisId\", pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imageId\": {{imageId}},\n  \"detectorId\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Анализ второй картинки",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 202\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 202) {",
+                  "    pm.collectionVariables.set(\"lastAnalysisId\", pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imageId\": {{secondImageId}},\n  \"detectorId\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Несуществующая картинка → 400",
           "event": [
             {
               "listen": "test",
@@ -441,164 +1339,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/images",
+              "raw": "{{baseUrl}}/api/analyses",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "images"
-              ]
-            },
-            "description": "Бизнес-правило ImageRecord.CanBeAnalyzed: принимаются только jpg, jpeg, png.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fileName\": \"animation.gif\",\n  \"sizeBytes\": 1850000,\n  \"width\": 1024,\n  \"height\": 1024\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "3. Детекторы",
-      "description": "CRUD детекторов (моделей-классификаторов).",
-      "item": [
-        {
-          "name": "Список детекторов",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Код ответа 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/detectors",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "detectors"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Только активные (Where)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Код ответа 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    pm.test(\"Все детекторы активны\", function () {",
-                  "        pm.response.json().forEach(d => pm.expect(d.isActive).to.be.true);",
-                  "    });",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/detectors?active=true",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "detectors"
-              ],
-              "query": [
-                {
-                  "key": "active",
-                  "value": "true"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Добавить детектор",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Код ответа 201\", function () {",
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 201) {",
-                  "    pm.collectionVariables.set(\"detectorId\", pm.response.json().id);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/detectors",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "detectors"
+                "analyses"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"EfficientNet-B3 (строгий порог)\",\n  \"architecture\": \"EfficientNet-B3\",\n  \"threshold\": 0.7,\n  \"isActive\": true\n}",
+              "raw": "{\n  \"imageId\": 999999,\n  \"detectorId\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -609,63 +1361,7 @@
           "response": []
         },
         {
-          "name": "Изменить порог детектора",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Код ответа 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/detectors/{{detectorId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "detectors",
-                "{{detectorId}}"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"EfficientNet-B3 (строгий порог)\",\n  \"architecture\": \"EfficientNet-B3\",\n  \"threshold\": 0.6,\n  \"isActive\": true\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Удалить детектор с анализами — 409",
+          "name": "Отключённый детектор → 409",
           "event": [
             {
               "listen": "test",
@@ -674,141 +1370,11 @@
                 "exec": [
                   "pm.test(\"Код ответа 409\", function () {",
                   "    pm.response.to.have.status(409);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/detectors/1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "detectors",
-                "1"
-              ]
-            },
-            "description": "У детектора 1 есть результаты анализа, поэтому удаление запрещено."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "4. Результаты анализа",
-      "description": "CRUD результатов. Вердикт сервер считает сам по порогу детектора.",
-      "item": [
-        {
-          "name": "Список анализов",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Код ответа 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/analyses",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "analyses"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Только сгенерированные (Where)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Код ответа 200\", function () {",
-                  "    pm.response.to.have.status(200);",
                   "});",
                   "",
-                  "if (pm.response.code === 200) {",
-                  "    pm.test(\"Все вердикты — Generated\", function () {",
-                  "        pm.response.json().forEach(a => pm.expect(a.verdict).to.eql(\"Generated\"));",
-                  "    });",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/analyses?verdict=Generated",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "analyses"
-              ],
-              "query": [
-                {
-                  "key": "verdict",
-                  "value": "Generated"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Добавить анализ",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Код ответа 201\", function () {",
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 201) {",
-                  "    pm.collectionVariables.set(\"analysisId\", pm.response.json().id);",
-                  "    pm.test(\"Вердикт Generated (0.18 <= порога 0.6)\", function () {",
-                  "        pm.expect(pm.response.json().verdict).to.eql(\"Generated\");",
+                  "if (pm.response.code === 409) {",
+                  "    pm.test(\"Причина: отключён\", function () {",
+                  "        pm.expect(pm.response.json().detail).to.include(\"отключён\");",
                   "    });",
                   "}"
                 ]
@@ -845,7 +1411,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"imageId\": {{imageId}},\n  \"detectorId\": {{detectorId}},\n  \"realProbability\": 0.18,\n  \"entropy\": 4.02,\n  \"concentration\": 0.105,\n  \"stdDeviation\": 0.131,\n  \"criticalRegion\": \"Center\",\n  \"anomalyType\": \"TextureAndNoise\"\n}",
+              "raw": "{\n  \"imageId\": {{imageId}},\n  \"detectorId\": {{detectorId}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -856,7 +1422,7 @@
           "response": []
         },
         {
-          "name": "Изменить анализ",
+          "name": "Дождаться результата",
           "event": [
             {
               "listen": "test",
@@ -868,8 +1434,68 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    pm.test(\"Вердикт пересчитан в Real (0.91 > порога 0.6)\", function () {",
-                  "        pm.expect(pm.response.json().verdict).to.eql(\"Real\");",
+                  "    // Анализ считается в фоне: пока он в очереди или считается, повторяем этот же запрос через 2 секунды.",
+                  "    // При запуске всей коллекции (Run) повтор идёт сам; при ручном Send просто нажмите Send ещё раз.",
+                  "    const status = pm.response.json().status;",
+                  "    const attempts = Number(pm.collectionVariables.get(\"waitAttempts\") || 0);",
+                  "    ",
+                  "    if ((status === \"Queued\" || status === \"Running\") && attempts < 90) {",
+                  "        pm.collectionVariables.set(\"waitAttempts\", attempts + 1);",
+                  "        console.log(\"Анализ ещё в работе (\" + status + \"), попытка \" + (attempts + 1));",
+                  "        setTimeout(function () {}, 2000);",
+                  "        postman.setNextRequest(pm.info.requestName);",
+                  "    } else {",
+                  "        pm.collectionVariables.set(\"waitAttempts\", 0);",
+                  "        pm.test(\"Анализ завершён\", function () {",
+                  "            pm.expect(status).to.eql(\"Completed\");",
+                  "        });",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses/{{lastAnalysisId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses",
+                "{{lastAnalysisId}}"
+              ]
+            },
+            "description": "Анализы считаются по очереди, этот — последний. Когда он готов, готовы и остальные."
+          },
+          "response": []
+        },
+        {
+          "name": "Результат EfficientNet-B3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const a = pm.response.json();",
+                  "    pm.test(\"Есть вероятность, вердикт и метрики карты\", function () {",
+                  "        pm.expect(a.status).to.eql(\"Completed\");",
+                  "        pm.expect(a.realProbability).to.be.within(0, 1);",
+                  "        pm.expect(a.verdict).to.be.oneOf([\"Real\", \"Generated\"]);",
+                  "        pm.expect(a.hasHeatmap).to.be.true;",
+                  "        pm.expect(a.criticalRegion).to.be.a(\"string\");",
                   "    });",
                   "}"
                 ]
@@ -878,22 +1504,10 @@
           ],
           "request": {
             "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
+              "type": "noauth"
             },
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "method": "GET",
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/analyses/{{analysisId}}",
               "host": [
@@ -904,29 +1518,108 @@
                 "analyses",
                 "{{analysisId}}"
               ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"imageId\": {{imageId}},\n  \"detectorId\": {{detectorId}},\n  \"realProbability\": 0.91,\n  \"entropy\": 4.02,\n  \"concentration\": 0.105,\n  \"stdDeviation\": 0.131,\n  \"criticalRegion\": \"Center\",\n  \"anomalyType\": \"TextureAndNoise\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           },
           "response": []
         },
         {
-          "name": "Отключённый детектор — 409",
+          "name": "Результат CatBoost (без карты)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Код ответа 409\", function () {",
-                  "    pm.response.to.have.status(409);",
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Карты нет\", function () {",
+                  "        pm.expect(pm.response.json().hasHeatmap).to.be.false;",
+                  "        pm.expect(pm.response.json().entropy).to.be.null;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses/{{catBoostAnalysisId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses",
+                "{{catBoostAnalysisId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Анализы картинки (Where)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Три анализа\", function () {",
+                  "        pm.expect(pm.response.json().length).to.eql(3);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses?imageId={{imageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses"
+              ],
+              "query": [
+                {
+                  "key": "imageId",
+                  "value": "{{imageId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Только завершённые (Where)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
                   "});"
                 ]
               }
@@ -934,96 +1627,157 @@
           ],
           "request": {
             "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
+              "type": "noauth"
             },
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "method": "GET",
+            "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/analyses",
+              "raw": "{{baseUrl}}/api/analyses?status=Completed",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "analyses"
-              ]
-            },
-            "description": "Детектор 3 (ResNet50 + CatBoost) отключён и новые анализы не принимает.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"imageId\": {{imageId}},\n  \"detectorId\": 3,\n  \"realProbability\": 0.5,\n  \"entropy\": 4.02,\n  \"concentration\": 0.105,\n  \"stdDeviation\": 0.131,\n  \"criticalRegion\": \"Center\",\n  \"anomalyType\": \"TextureAndNoise\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "Completed"
                 }
-              }
+              ]
             }
           },
           "response": []
         },
         {
-          "name": "Вероятность вне диапазона — 400",
+          "name": "Тепловая карта",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Код ответа 400\", function () {",
-                  "    pm.response.to.have.status(400);",
-                  "});"
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Это PNG\", function () {",
+                  "        pm.expect(pm.response.headers.get(\"Content-Type\")).to.eql(\"image/png\");",
+                  "    });",
+                  "}"
                 ]
               }
             }
           ],
           "request": {
             "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
+              "type": "noauth"
             },
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "method": "GET",
+            "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/analyses",
+              "raw": "{{baseUrl}}/api/analyses/{{analysisId}}/heatmap",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "analyses"
+                "analyses",
+                "{{analysisId}}",
+                "heatmap"
               ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"imageId\": {{imageId}},\n  \"detectorId\": {{detectorId}},\n  \"realProbability\": 1.5,\n  \"entropy\": 4.02,\n  \"concentration\": 0.105,\n  \"stdDeviation\": 0.131,\n  \"criticalRegion\": \"Center\",\n  \"anomalyType\": \"TextureAndNoise\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Карта поверх картинки",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Это PNG\", function () {",
+                  "        pm.expect(pm.response.headers.get(\"Content-Type\")).to.eql(\"image/png\");",
+                  "    });",
+                  "}"
+                ]
               }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses/{{analysisId}}/heatmap?overlay=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses",
+                "{{analysisId}}",
+                "heatmap"
+              ],
+              "query": [
+                {
+                  "key": "overlay",
+                  "value": "true"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Карта CatBoost → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 404) {",
+                  "    pm.test(\"Причина: не строит тепловую карту\", function () {",
+                  "        pm.expect(pm.response.json().detail).to.include(\"не строит тепловую карту\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses/{{catBoostAnalysisId}}/heatmap",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses",
+                "{{catBoostAnalysisId}}",
+                "heatmap"
+              ]
             }
           },
           "response": []
@@ -1032,7 +1786,7 @@
     },
     {
       "name": "5. Отчёты",
-      "description": "Запросы на объединение данных из разных классов. Доступны любому авторизованному пользователю.",
+      "description": "Сводные отчёты по нескольким таблицам — только для вошедших пользователей.",
       "item": [
         {
           "name": "Журнал проверок (Join)",
@@ -1044,7 +1798,13 @@
                 "exec": [
                   "pm.test(\"Код ответа 200\", function () {",
                   "    pm.response.to.have.status(200);",
-                  "});"
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"У каждой записи есть заключение\", function () {",
+                  "        pm.response.json().forEach(r => pm.expect(r.conclusion).to.include(r.detectorName));",
+                  "    });",
+                  "}"
                 ]
               }
             }
@@ -1086,7 +1846,13 @@
                 "exec": [
                   "pm.test(\"Код ответа 200\", function () {",
                   "    pm.response.to.have.status(200);",
-                  "});"
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Все — Generated\", function () {",
+                  "        pm.response.json().forEach(r => pm.expect(r.verdict).to.eql(\"Generated\"));",
+                  "    });",
+                  "}"
                 ]
               }
             }
@@ -1125,7 +1891,7 @@
           "response": []
         },
         {
-          "name": "Статистика по детекторам (GroupJoin)",
+          "name": "Сравнение детекторов (GroupJoin)",
           "event": [
             {
               "listen": "test",
@@ -1134,7 +1900,14 @@
                 "exec": [
                   "pm.test(\"Код ответа 200\", function () {",
                   "    pm.response.to.have.status(200);",
-                  "});"
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Есть время расчёта у использованных\", function () {",
+                  "        pm.response.json().filter(s => s.analysesCount > 0)",
+                  "            .forEach(s => pm.expect(s.averageDurationSeconds).to.be.a(\"number\"));",
+                  "    });",
+                  "}"
                 ]
               }
             }
@@ -1221,7 +1994,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    pm.test(\"У всех изображений 0 проверок\", function () {",
+                  "    pm.test(\"У всех ноль проверок\", function () {",
                   "        pm.response.json().forEach(i => pm.expect(i.analysesCount).to.eql(0));",
                   "    });",
                   "}"
@@ -1263,7 +2036,7 @@
           "response": []
         },
         {
-          "name": "Расхождения детекторов (GroupBy)",
+          "name": "Разногласия детекторов (GroupBy)",
           "event": [
             {
               "listen": "test",
@@ -1307,11 +2080,11 @@
       ]
     },
     {
-      "name": "6. Ошибки 401 и 403",
-      "description": "401 — сервер не знает, кто вы (нет токена). 403 — знает, но у роли нет прав.",
+      "name": "6. Разница 401 и 403",
+      "description": "401 — сервер не знает, кто вы (нет токена). 403 — знает, но вашей роли действие запрещено.",
       "item": [
         {
-          "name": "Отчёт без токена — 401",
+          "name": "Отчёт без токена → 401",
           "event": [
             {
               "listen": "test",
@@ -1346,7 +2119,7 @@
           "response": []
         },
         {
-          "name": "Добавление без токена — 401",
+          "name": "Загрузка без токена → 401",
           "event": [
             {
               "listen": "test",
@@ -1365,12 +2138,7 @@
               "type": "noauth"
             },
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/images",
               "host": [
@@ -1382,19 +2150,71 @@
               ]
             },
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fileName\": \"avatar_dalle.png\",\n  \"sizeBytes\": 1850000,\n  \"width\": 1024,\n  \"height\": 1024\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "images/sample.jpg"
                 }
-              }
+              ]
             }
           },
           "response": []
         },
         {
-          "name": "Добавление с токеном пользователя — 403",
+          "name": "Загрузка обычным пользователем → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "images"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "images/sample.jpg"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Запуск анализа пользователем → 403",
           "event": [
             {
               "listen": "test",
@@ -1427,18 +2247,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/images",
+              "raw": "{{baseUrl}}/api/analyses",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "images"
+                "analyses"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fileName\": \"avatar_dalle.png\",\n  \"sizeBytes\": 1850000,\n  \"width\": 1024,\n  \"height\": 1024\n}",
+              "raw": "{\n  \"imageId\": {{imageId}},\n  \"detectorId\": 3\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1447,17 +2267,23 @@
             }
           },
           "response": []
-        },
+        }
+      ]
+    },
+    {
+      "name": "7. Удаление",
+      "description": "Удаление записей; изображение удаляется вместе с анализами и тепловыми картами.",
+      "item": [
         {
-          "name": "Удаление с токеном пользователя — 403",
+          "name": "Удалить детектор с анализами → 409",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Код ответа 403\", function () {",
-                  "    pm.response.to.have.status(403);",
+                  "pm.test(\"Код ответа 409\", function () {",
+                  "    pm.response.to.have.status(409);",
                   "});"
                 ]
               }
@@ -1469,7 +2295,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{userToken}}",
+                  "value": "{{adminToken}}",
                   "type": "string"
                 }
               ]
@@ -1477,25 +2303,19 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/analyses/{{analysisId}}",
+              "raw": "{{baseUrl}}/api/detectors/1",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "analyses",
-                "{{analysisId}}"
+                "detectors",
+                "1"
               ]
             }
           },
           "response": []
-        }
-      ]
-    },
-    {
-      "name": "7. Удаление",
-      "description": "Удаляет записи, созданные в папках 2–4.",
-      "item": [
+        },
         {
           "name": "Удалить анализ",
           "event": [
@@ -1525,14 +2345,49 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/analyses/{{analysisId}}",
+              "raw": "{{baseUrl}}/api/analyses/{{catBoostAnalysisId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "analyses",
-                "{{analysisId}}"
+                "{{catBoostAnalysisId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Удалённый анализ → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses/{{catBoostAnalysisId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses",
+                "{{catBoostAnalysisId}}"
               ]
             }
           },
@@ -1623,7 +2478,53 @@
           "response": []
         },
         {
-          "name": "Удалённое изображение — 404",
+          "name": "Анализы удалённой картинки исчезли",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Список пуст\", function () {",
+                  "        pm.expect(pm.response.json()).to.eql([]);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses?imageId={{imageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses"
+              ],
+              "query": [
+                {
+                  "key": "imageId",
+                  "value": "{{imageId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Удалённое изображение → 404",
           "event": [
             {
               "listen": "test",
@@ -1656,74 +2557,50 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "Удалить второе изображение",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Код ответа 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/images/{{secondImageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "images",
+                "{{secondImageId}}"
+              ]
+            }
+          },
+          "response": []
         }
       ]
-    }
-  ],
-  "event": [
-    {
-      "listen": "prerequest",
-      "script": {
-        "type": "text/javascript",
-        "exec": [
-          "// Автовход: если токенов ещё нет или они старше 50 минут (живут 60),",
-          "// перед запросом получаем новые. Поэтому любой запрос можно выполнять отдельно.",
-          "const issuedAt = Number(pm.collectionVariables.get(\"tokensIssuedAt\") || 0);",
-          "const fresh = Date.now() - issuedAt < 50 * 60 * 1000;",
-          "const isLoginRequest = pm.request.url.getPath().endsWith(\"/auth/login\");",
-          "",
-          "function login(user, password, variable) {",
-          "    pm.sendRequest({",
-          "        url: pm.collectionVariables.get(\"baseUrl\") + \"/api/auth/login\",",
-          "        method: \"POST\",",
-          "        header: { \"Content-Type\": \"application/json\" },",
-          "        body: { mode: \"raw\", raw: JSON.stringify({ login: user, password: password }) }",
-          "    }, function (err, res) {",
-          "        if (err || res.code !== 200) {",
-          "            console.error(\"Автовход не удался для \" + user + \". Запущен ли сервер по адресу baseUrl?\");",
-          "            return;",
-          "        }",
-          "        pm.collectionVariables.set(variable, res.json().token);",
-          "        pm.collectionVariables.set(\"tokensIssuedAt\", Date.now());",
-          "    });",
-          "}",
-          "",
-          "if (!fresh && !isLoginRequest) {",
-          "    login(\"admin\", \"admin123\", \"adminToken\");",
-          "    login(\"user\", \"user123\", \"userToken\");",
-          "}"
-        ]
-      }
-    }
-  ],
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:5075"
-    },
-    {
-      "key": "adminToken",
-      "value": ""
-    },
-    {
-      "key": "userToken",
-      "value": ""
-    },
-    {
-      "key": "tokensIssuedAt",
-      "value": "0"
-    },
-    {
-      "key": "imageId",
-      "value": ""
-    },
-    {
-      "key": "detectorId",
-      "value": ""
-    },
-    {
-      "key": "analysisId",
-      "value": ""
     }
   ]
 }

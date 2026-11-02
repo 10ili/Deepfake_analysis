@@ -2,8 +2,13 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
 using Deepfake_analysis.Auth;
+using Deepfake_analysis.Background;
 using Deepfake_analysis.Data;
+using Deepfake_analysis.Detection;
+using Deepfake_analysis.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,7 +20,29 @@ var jwt = jwtSection.Get<JwtOptions>() ?? new JwtOptions();
 
 builder.Services.Configure<JwtOptions>(jwtSection);
 builder.Services.AddSingleton<TokenService>();
-builder.Services.AddSingleton<DataStore>();
+
+// База данных: файл SQLite. Относительный путь считается от папки приложения, а не от текущей папки консоли.
+var connection = new SqliteConnectionStringBuilder(builder.Configuration.GetConnectionString("Default"));
+connection.DataSource = Path.GetFullPath(connection.DataSource, builder.Environment.ContentRootPath);
+builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connection.ToString()));
+
+// Сервисы — вся работа с данными; контроллеры обращаются только к ним.
+// Scoped: свой экземпляр на каждый HTTP-запрос, как и у AppDbContext.
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IImageService, ImageService>();
+builder.Services.AddScoped<IDetectorService, DetectorService>();
+builder.Services.AddScoped<IAnalysisService, AnalysisService>();
+builder.Services.AddScoped<IReportService, ReportService>();
+
+// Модели и фоновый расчёт: по одному экземпляру на всё приложение.
+builder.Services.Configure<ModelOptions>(builder.Configuration.GetSection("Models"));
+builder.Services.AddSingleton<ModelRegistry>();
+builder.Services.AddSingleton<AnalysisQueue>();
+builder.Services.AddHostedService<AnalysisWorker>();
+
+// Ошибки сервисов (404, 400, 409, 503) превращаются в ответы в формате ProblemDetails.
+builder.Services.AddExceptionHandler<ServiceExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -42,7 +69,15 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+// При первом запуске создаёт файл базы с таблицами и заполняет начальными данными.
+using (var scope = app.Services.CreateScope())
+{
+    await DbInitializer.InitializeAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>());
+}
+
 // Configure the HTTP request pipeline.
+app.UseExceptionHandler();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();

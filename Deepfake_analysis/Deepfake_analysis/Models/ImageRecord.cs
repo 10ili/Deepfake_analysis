@@ -1,7 +1,7 @@
 namespace Deepfake_analysis.Models
 {
-    /// <summary>Изображение, загруженное на проверку.</summary>
-    public class ImageRecord : IEntity
+    /// <summary>Изображение, загруженное на проверку. Сами байты файла хранятся отдельно — в <see cref="ImageFile"/>.</summary>
+    public class ImageRecord
     {
         public const long MaxSizeBytes = 20 * 1024 * 1024;
 
@@ -15,6 +15,8 @@ namespace Deepfake_analysis.Models
         public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
 
         public string Extension => Path.GetExtension(FileName).ToLowerInvariant();
+
+        public string ContentType => Extension == ".png" ? "image/png" : "image/jpeg";
 
         public double Megapixels => Math.Round(Width * (double)Height / 1_000_000, 2);
 
@@ -38,5 +40,25 @@ namespace Deepfake_analysis.Models
             reason = null;
             return true;
         }
+
+        /// <summary>
+        /// Новое имя файла допустимо, только если расширение не меняется:
+        /// иначе имя «.png» досталось бы содержимому JPEG.
+        /// </summary>
+        public bool CanBeRenamedTo(string fileName, out string? reason)
+        {
+            var extension = Path.GetExtension(fileName).ToLowerInvariant();
+            var sameFormat = extension == Extension ||
+                             (extension is ".jpg" or ".jpeg" && Extension is ".jpg" or ".jpeg");
+            reason = sameFormat ? null : $"Расширение файла менять нельзя: было '{Extension}', указано '{extension}'.";
+            return sameFormat;
+        }
+    }
+
+    /// <summary>Содержимое файла изображения. Отдельная таблица, чтобы списки картинок не тянули из базы мегабайты.</summary>
+    public class ImageFile
+    {
+        public int ImageId { get; set; }
+        public byte[] Content { get; set; } = [];
     }
 }

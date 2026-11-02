@@ -1,35 +1,24 @@
 using Deepfake_analysis.Auth;
-using Deepfake_analysis.Data;
 using Deepfake_analysis.Dtos;
+using Deepfake_analysis.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Deepfake_analysis.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class AuthController : ControllerBase
+    public class AuthController(IUserService users, TokenService tokens) : ControllerBase
     {
-        private readonly DataStore _store;
-        private readonly TokenService _tokens;
-
-        public AuthController(DataStore store, TokenService tokens)
-        {
-            _store = store;
-            _tokens = tokens;
-        }
-
         /// <summary>Проверяет логин и пароль и выдаёт токен доступа.</summary>
         [HttpPost("login")]
-        public ActionResult<LoginResponse> Login(LoginRequest request)
+        public async Task<ActionResult<LoginResponse>> Login(LoginRequest request)
         {
-            var user = _store.Users.GetAll()
-                .FirstOrDefault(u => u.Login.Equals(request.Login, StringComparison.OrdinalIgnoreCase));
-
-            if (user == null || !user.VerifyPassword(request.Password))
+            var user = await users.AuthenticateAsync(request.Login, request.Password);
+            if (user == null)
                 return Problem("Неверный логин или пароль.", statusCode: StatusCodes.Status401Unauthorized);
 
-            var expires = _tokens.GetExpiration();
-            return new LoginResponse(_tokens.CreateToken(user, expires), expires, user.Login, user.Role);
+            var expires = tokens.GetExpiration();
+            return new LoginResponse(tokens.CreateToken(user, expires), expires, user.Login, user.Role);
         }
     }
 }

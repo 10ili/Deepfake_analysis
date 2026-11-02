@@ -10,7 +10,7 @@ namespace Deepfake_analysis.Models
     }
 
     /// <summary>Учётная запись пользователя API.</summary>
-    public class User : IEntity
+    public class User
     {
         private static readonly PasswordHasher<User> Hasher = new();
 

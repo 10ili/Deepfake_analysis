@@ -17,12 +17,14 @@ namespace Deepfake_analysis.Dtos
     public record DetectorStatistics(
         int DetectorId,
         string DetectorName,
+        DetectorModel Model,
         bool IsActive,
         double Threshold,
         int AnalysesCount,
         int GeneratedCount,
         int RealCount,
-        double? AverageRealProbability);
+        double? AverageRealProbability,
+        double? AverageDurationSeconds);
 
     public record ImageSummary(
         int ImageId,

@@ -486,3 +486,8 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 training/README.md
+
+# База SQLite, которую API создаёт при запуске
+*.db
+*.db-shm
+*.db-wal

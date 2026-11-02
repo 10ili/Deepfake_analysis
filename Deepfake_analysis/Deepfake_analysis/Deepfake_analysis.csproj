@@ -11,6 +11,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <!-- База данных SQLite через Entity Framework Core. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <!-- Нейросети. Версии связаны: TorchSharp 0.107.0 собран под libtorch 2.10.0. -->
     <PackageReference Include="TorchSharp" Version="0.107.0" />
     <!-- Только сборка для Windows (~80 МБ); пакет TorchSharp-cpu тянул бы ещё Linux и macOS. -->
