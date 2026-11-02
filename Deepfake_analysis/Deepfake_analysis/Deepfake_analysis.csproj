@@ -24,4 +24,32 @@
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
   </ItemGroup>
 
+  <!--
+    Файлы моделей при публикации кладутся в папку models рядом с exe (пути из appsettings.json).
+    Берутся из training/checkpoints. При обычной сборке не копируются: в режиме разработки
+    модели читаются прямо из training/checkpoints (appsettings.Development.json).
+  -->
+  <PropertyGroup>
+    <CheckpointsDir>$(MSBuildProjectDirectory)\..\..\training\checkpoints\</CheckpointsDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ModelFile Include="$(CheckpointsDir)efficientnet_b3\efficientnet_b3.torchscript.pt" />
+    <ModelFile Include="$(CheckpointsDir)resnet50\resnet50.torchscript.pt" />
+    <ModelFile Include="$(CheckpointsDir)resnet50_catboost\resnet50_features.torchscript.pt" />
+    <ModelFile Include="$(CheckpointsDir)resnet50_catboost\resnet50_catboost.onnx" />
+  </ItemGroup>
+
+  <!-- Выполняется при публикации: добавляет модели к списку файлов, которые попадут в папку публикации. -->
+  <Target Name="PublishModels" AfterTargets="ComputeResolvedFilesToPublishList">
+    <Warning Condition="!Exists('%(ModelFile.FullPath)')"
+             Text="Файл модели не найден и не попадёт в публикацию: %(ModelFile.FullPath)" />
+    <ItemGroup>
+      <!-- ExcludeFromSingleFile: модели остаются отдельными файлами, а не вшиваются внутрь exe. -->
+      <ResolvedFileToPublish Include="@(ModelFile)" Condition="Exists('%(FullPath)')"
+                             RelativePath="models\%(Filename)%(Extension)"
+                             CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    </ItemGroup>
+  </Target>
+
 </Project>

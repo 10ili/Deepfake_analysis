@@ -1,9 +1,10 @@
 @Deepfake_analysis_HostAddress = http://localhost:5075
-# Вставьте сюда значение "token" из ответа на запрос входа
-@AdminToken = <токен администратора>
-@UserToken = <токен пользователя>
+# Сначала выполните оба запроса входа: токены из ответов подставятся в остальные запросы сами.
+@AdminToken = {{adminLogin.response.body.$.token}}
+@UserToken = {{userLogin.response.body.$.token}}
 
 ### Вход администратора
+# @name adminLogin
 POST {{Deepfake_analysis_HostAddress}}/api/auth/login
 Content-Type: application/json
 
@@ -13,6 +14,7 @@ Content-Type: application/json
 }
 
 ### Вход обычного пользователя
+# @name userLogin
 POST {{Deepfake_analysis_HostAddress}}/api/auth/login
 Content-Type: application/json
 
@@ -24,16 +26,14 @@ Content-Type: application/json
 ### 401: отчёт без токена
 GET {{Deepfake_analysis_HostAddress}}/api/reports/detectors
 
-### 403: добавление данных с токеном обычного пользователя
-POST {{Deepfake_analysis_HostAddress}}/api/images
+### 403: запуск анализа с токеном обычного пользователя
+POST {{Deepfake_analysis_HostAddress}}/api/analyses
 Authorization: Bearer {{UserToken}}
 Content-Type: application/json
 
 {
-  "fileName": "forbidden.png",
-  "sizeBytes": 1000,
-  "width": 100,
-  "height": 100
+  "imageId": 1,
+  "detectorId": 1
 }
 
 ### Изображения
@@ -44,32 +44,32 @@ Accept: application/json
 GET {{Deepfake_analysis_HostAddress}}/api/images?extension=png
 Accept: application/json
 
-###
+### Загрузка файла (form-data, поле file)
 POST {{Deepfake_analysis_HostAddress}}/api/images
 Authorization: Bearer {{AdminToken}}
-Content-Type: application/json
+Content-Type: multipart/form-data; boundary=ImageBoundary
 
-{
-  "fileName": "avatar_dalle.png",
-  "sizeBytes": 1850000,
-  "width": 1024,
-  "height": 1024
-}
+--ImageBoundary
+Content-Disposition: form-data; name="file"; filename="sample.jpg"
+Content-Type: image/jpeg
 
-###
-PUT {{Deepfake_analysis_HostAddress}}/api/images/4
+< ../../postman/images/sample.jpg
+--ImageBoundary--
+
+### Сам файл изображения
+GET {{Deepfake_analysis_HostAddress}}/api/images/1/file
+
+### Переименование (расширение менять нельзя)
+PUT {{Deepfake_analysis_HostAddress}}/api/images/1
 Authorization: Bearer {{AdminToken}}
 Content-Type: application/json
 
 {
-  "fileName": "passport_scan_v2.png",
-  "sizeBytes": 3300000,
-  "width": 2480,
-  "height": 3508
+  "fileName": "test_photo.jpg"
 }
 
 ###
-DELETE {{Deepfake_analysis_HostAddress}}/api/images/4
+DELETE {{Deepfake_analysis_HostAddress}}/api/images/1
 Authorization: Bearer {{AdminToken}}
 
 ### Детекторы
@@ -83,49 +83,50 @@ Content-Type: application/json
 
 {
   "name": "EfficientNet-B3 (строгий порог)",
-  "architecture": "EfficientNet-B3",
-  "threshold": 0.7,
+  "model": "EfficientNetB3",
+  "threshold": 0.8,
   "isActive": true
 }
 
 ###
-PUT {{Deepfake_analysis_HostAddress}}/api/detectors/2
+PUT {{Deepfake_analysis_HostAddress}}/api/detectors/4
 Authorization: Bearer {{AdminToken}}
 Content-Type: application/json
 
 {
-  "name": "ResNet50 (сквозное обучение)",
-  "architecture": "ResNet50",
-  "threshold": 0.65,
+  "name": "EfficientNet-B3 (строгий порог)",
+  "model": "EfficientNetB3",
+  "threshold": 0.9,
   "isActive": true
 }
 
 ###
-DELETE {{Deepfake_analysis_HostAddress}}/api/detectors/2
+DELETE {{Deepfake_analysis_HostAddress}}/api/detectors/4
 Authorization: Bearer {{AdminToken}}
 
-### Результаты анализа
-GET {{Deepfake_analysis_HostAddress}}/api/analyses?verdict=Generated
-Accept: application/json
-
-###
+### Запуск анализа: ответ 202 сразу, расчёт идёт в фоне
 POST {{Deepfake_analysis_HostAddress}}/api/analyses
 Authorization: Bearer {{AdminToken}}
 Content-Type: application/json
 
 {
-  "imageId": 4,
-  "detectorId": 1,
-  "realProbability": 0.18,
-  "entropy": 4.02,
-  "concentration": 0.105,
-  "stdDeviation": 0.131,
-  "criticalRegion": "Center",
-  "anomalyType": "TextureAndNoise"
+  "imageId": 1,
+  "detectorId": 1
 }
 
+### Результат (пока Status = Queued или Running — повторите позже)
+GET {{Deepfake_analysis_HostAddress}}/api/analyses/1
+Accept: application/json
+
 ###
-DELETE {{Deepfake_analysis_HostAddress}}/api/analyses/7
+GET {{Deepfake_analysis_HostAddress}}/api/analyses?status=Completed&verdict=Generated
+Accept: application/json
+
+### Тепловая карта PNG (с ?overlay=true — поверх картинки)
+GET {{Deepfake_analysis_HostAddress}}/api/analyses/1/heatmap?overlay=true
+
+###
+DELETE {{Deepfake_analysis_HostAddress}}/api/analyses/1
 Authorization: Bearer {{AdminToken}}
 
 ### Отчёты

@@ -75,6 +75,10 @@
       "value": ""
     },
     {
+      "key": "usedDetectorId",
+      "value": ""
+    },
+    {
       "key": "catBoostAnalysisId",
       "value": ""
     },
@@ -109,6 +113,9 @@
                   "        pm.expect(pm.response.json().role).to.eql(\"Admin\");",
                   "    });",
                   "    pm.collectionVariables.set(\"adminToken\", pm.response.json().token);",
+                  "    // Новый прогон: номера записей из прошлого запуска больше не нужны.",
+                  "    [\"imageId\", \"secondImageId\", \"detectorId\", \"analysisId\", \"catBoostAnalysisId\", \"lastAnalysisId\", \"usedDetectorId\"]",
+                  "        .forEach(v => pm.collectionVariables.set(v, \"\"));",
                   "    pm.collectionVariables.set(\"tokensIssuedAt\", Date.now());",
                   "}"
                 ]
@@ -573,6 +580,13 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// Если Postman не нашёл файл, он отправляет форму без него, и сервер отвечает «поле file обязательно».",
+                  "const fileMissing = pm.response.code === 400 && (pm.response.json().errors || {}).file !== undefined;",
+                  "pm.test(\"Postman нашёл файл images/sample.jpg\", function () {",
+                  "    pm.expect(fileMissing, \"Файл не найден: укажите Settings → General → Working directory = папка postman \" +",
+                  "        \"(где лежит коллекция) или выберите файл в поле file вручную\").to.be.false;",
+                  "});",
+                  "",
                   "pm.test(\"Код ответа 201\", function () {",
                   "    pm.response.to.have.status(201);",
                   "});",
@@ -632,6 +646,13 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// Если Postman не нашёл файл, он отправляет форму без него, и сервер отвечает «поле file обязательно».",
+                  "const fileMissing = pm.response.code === 400 && (pm.response.json().errors || {}).file !== undefined;",
+                  "pm.test(\"Postman нашёл файл images/sample.png\", function () {",
+                  "    pm.expect(fileMissing, \"Файл не найден: укажите Settings → General → Working directory = папка postman \" +",
+                  "        \"(где лежит коллекция) или выберите файл в поле file вручную\").to.be.false;",
+                  "});",
+                  "",
                   "pm.test(\"Код ответа 201\", function () {",
                   "    pm.response.to.have.status(201);",
                   "});",
@@ -687,6 +708,13 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// Если Postman не нашёл файл, он отправляет форму без него, и сервер отвечает «поле file обязательно».",
+                  "const fileMissing = pm.response.code === 400 && (pm.response.json().errors || {}).file !== undefined;",
+                  "pm.test(\"Postman нашёл файл images/not_an_image.jpg\", function () {",
+                  "    pm.expect(fileMissing, \"Файл не найден: укажите Settings → General → Working directory = папка postman \" +",
+                  "        \"(где лежит коллекция) или выберите файл в поле file вручную\").to.be.false;",
+                  "});",
+                  "",
                   "pm.test(\"Код ответа 400\", function () {",
                   "    pm.response.to.have.status(400);",
                   "});",
@@ -1083,6 +1111,7 @@
                   "",
                   "if (pm.response.code === 202) {",
                   "    pm.collectionVariables.set(\"analysisId\", pm.response.json().id);",
+                  "    pm.collectionVariables.set(\"usedDetectorId\", pm.response.json().detectorId);",
                   "    pm.test(\"Поставлен в очередь\", function () {",
                   "        pm.expect(pm.response.json().status).to.eql(\"Queued\");",
                   "        pm.expect(pm.response.headers.get(\"Location\")).to.include(\"/api/Analyses/\");",
@@ -2126,6 +2155,13 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// Если Postman не нашёл файл, он отправляет форму без него, и сервер отвечает «поле file обязательно».",
+                  "const fileMissing = pm.response.code === 400 && (pm.response.json().errors || {}).file !== undefined;",
+                  "pm.test(\"Postman нашёл файл images/sample.jpg\", function () {",
+                  "    pm.expect(fileMissing, \"Файл не найден: укажите Settings → General → Working directory = папка postman \" +",
+                  "        \"(где лежит коллекция) или выберите файл в поле file вручную\").to.be.false;",
+                  "});",
+                  "",
                   "pm.test(\"Код ответа 401\", function () {",
                   "    pm.response.to.have.status(401);",
                   "});"
@@ -2170,6 +2206,13 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// Если Postman не нашёл файл, он отправляет форму без него, и сервер отвечает «поле file обязательно».",
+                  "const fileMissing = pm.response.code === 400 && (pm.response.json().errors || {}).file !== undefined;",
+                  "pm.test(\"Postman нашёл файл images/sample.jpg\", function () {",
+                  "    pm.expect(fileMissing, \"Файл не найден: укажите Settings → General → Working directory = папка postman \" +",
+                  "        \"(где лежит коллекция) или выберите файл в поле file вручную\").to.be.false;",
+                  "});",
+                  "",
                   "pm.test(\"Код ответа 403\", function () {",
                   "    pm.response.to.have.status(403);",
                   "});"
@@ -2303,16 +2346,17 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/detectors/1",
+              "raw": "{{baseUrl}}/api/detectors/{{usedDetectorId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "detectors",
-                "1"
+                "{{usedDetectorId}}"
               ]
-            }
+            },
+            "description": "Детектор берётся из анализа, запущенного выше: если анализа нет, адрес пустой и ничего не удалится."
           },
           "response": []
         },
