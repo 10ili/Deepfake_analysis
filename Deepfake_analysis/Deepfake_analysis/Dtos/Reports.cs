@@ -11,7 +11,6 @@ namespace Deepfake_analysis.Dtos
         string DetectorName,
         double RealProbability,
         Verdict Verdict,
-        RiskLevel RiskLevel,
         string Conclusion);
 
     public record DetectorStatistics(

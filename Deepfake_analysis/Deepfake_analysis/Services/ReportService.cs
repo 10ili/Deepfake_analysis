@@ -42,7 +42,6 @@ namespace Deepfake_analysis.Services
                     x.DetectorName,
                     x.Analysis.RealProbability!.Value,
                     x.Analysis.Verdict!.Value,
-                    x.Analysis.RiskLevel!.Value,
                     x.Analysis.BuildConclusion(x.DetectorName)!))
                 .ToList();
         }

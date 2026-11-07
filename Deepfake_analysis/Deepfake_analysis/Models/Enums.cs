@@ -6,12 +6,6 @@ namespace Deepfake_analysis.Models
         Generated
     }
 
-    public enum RiskLevel
-    {
-        Low,
-        High
-    }
-
     /// <summary>Обученная модель, на которой работает детектор.</summary>
     public enum DetectorModel
     {

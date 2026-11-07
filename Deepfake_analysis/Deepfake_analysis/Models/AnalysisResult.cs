@@ -38,13 +38,6 @@ namespace Deepfake_analysis.Models
 
         public double? GeneratedProbability => RealProbability == null ? null : Math.Round(1 - RealProbability.Value, 4);
 
-        public RiskLevel? RiskLevel => Verdict switch
-        {
-            Models.Verdict.Generated => Models.RiskLevel.High,
-            Models.Verdict.Real => Models.RiskLevel.Low,
-            _ => null
-        };
-
         /// <summary>Сколько секунд модель считала результат.</summary>
         public double? DurationSeconds => StartedAt == null || CompletedAt == null
             ? null
@@ -118,9 +111,9 @@ namespace Deepfake_analysis.Models
             if (Status != AnalysisStatus.Completed)
                 return null;
 
-            var risk = RiskLevel == Models.RiskLevel.High ? "ВЫСОКИЙ" : "НИЗКИЙ";
+            var verdict = Verdict == Models.Verdict.Generated ? "сгенерированное" : "настоящее";
             var percent = (GeneratedProbability!.Value * 100).ToString("F2", CultureInfo.InvariantCulture);
-            var text = $"Модель {detectorName} определила уровень риска как: {risk} ({percent}%).";
+            var text = $"Модель {detectorName} определила изображение как {verdict}, вероятность генерации {percent}%.";
 
             if (!HasHeatmap)
                 return text + " Тепловая карта для этой модели не строится.";
