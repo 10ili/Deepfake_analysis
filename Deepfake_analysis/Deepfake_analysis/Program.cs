@@ -70,6 +70,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy => policy
+        .WithOrigins("http://localhost:4200")
+        .AllowAnyHeader()
+        .AllowAnyMethod());
+});
+
 builder.Services.AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -93,6 +101,7 @@ if (app.Environment.IsDevelopment())
 
 // HTTPS-редиректа нет намеренно: клиенты API при перенаправлении на другой порт
 // отбрасывают заголовок Authorization, и запрос с токеном получает 401.
+app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
