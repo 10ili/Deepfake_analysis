@@ -1,0 +1,69 @@
+<div class="filter">
+  <mat-form-field subscriptSizing="dynamic">
+    <mat-label>Вердикт</mat-label>
+    <mat-select (selectionChange)="load($event.value)">
+      <mat-option [value]="undefined">Все</mat-option>
+      @for (verdict of verdicts; track verdict) {
+        <mat-option [value]="verdict">{{ verdictLabels[verdict] }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+</div>
+
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+<div class="table">
+  <table
+    mat-table
+    matSort
+    [dataSource]="rows()"
+    [matSortActive]="sort().active"
+    [matSortDirection]="sort().direction"
+    (matSortChange)="sort.set($event)"
+  >
+    <ng-container matColumnDef="analysisId">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>№</th>
+      <td mat-cell *matCellDef="let row">
+        <a [routerLink]="['/analyses', row.analysisId]">{{ row.analysisId }}</a>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="createdAt">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Дата</th>
+      <td mat-cell *matCellDef="let row">{{ row.createdAt | date: 'dd.MM.yyyy HH:mm' }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="fileName">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Изображение</th>
+      <td mat-cell *matCellDef="let row">
+        <a [routerLink]="['/images', row.imageId]">{{ row.fileName }}</a>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="detectorName">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Детектор</th>
+      <td mat-cell *matCellDef="let row">{{ row.detectorName }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="verdict">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Вердикт</th>
+      <td mat-cell *matCellDef="let row">
+        <span [class.generated]="row.verdict === 'Generated'">{{ verdictLabel(row.verdict) }}</span>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="conclusion">
+      <th mat-header-cell *matHeaderCellDef>Заключение</th>
+      <td mat-cell class="conclusion" *matCellDef="let row">{{ row.conclusion }}</td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="columns"></tr>
+    <tr mat-row *matRowDef="let row; columns: columns"></tr>
+  </table>
+</div>
+
+@if (loaded() && items().length === 0) {
+  <p class="empty">Ничего не найдено</p>
+}

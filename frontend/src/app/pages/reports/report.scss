@@ -1,0 +1,25 @@
+.filter {
+  margin: 16px 0;
+}
+
+.table {
+  margin-top: 8px;
+  overflow-x: auto;
+}
+
+.conclusion {
+  min-width: 280px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.generated,
+.error {
+  color: var(--mat-sys-error);
+}
+
+.empty {
+  padding: 32px;
+  color: var(--mat-sys-on-surface-variant);
+  text-align: center;
+}

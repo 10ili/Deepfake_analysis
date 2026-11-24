@@ -1,0 +1,62 @@
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+<div class="table">
+  <table
+    mat-table
+    matSort
+    [dataSource]="rows()"
+    [matSortActive]="sort().active"
+    [matSortDirection]="sort().direction"
+    (matSortChange)="sort.set($event)"
+  >
+    <ng-container matColumnDef="detectorName">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Детектор</th>
+      <td mat-cell *matCellDef="let row">
+        {{ row.detectorName }}
+        @if (!row.isActive) {
+          (отключён)
+        }
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="model">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Модель</th>
+      <td mat-cell *matCellDef="let row">{{ modelLabel(row.model) }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="threshold">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Порог</th>
+      <td mat-cell *matCellDef="let row">{{ row.threshold | number: '1.2-4' }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="analysesCount">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Проверок</th>
+      <td mat-cell *matCellDef="let row">{{ row.analysesCount }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="generatedCount">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Сгенерированных</th>
+      <td mat-cell *matCellDef="let row">{{ row.generatedCount }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="realCount">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Настоящих</th>
+      <td mat-cell *matCellDef="let row">{{ row.realCount }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="averageRealProbability">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Средняя подлинность</th>
+      <td mat-cell *matCellDef="let row">{{ row.averageRealProbability | percent: '1.2-2' }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="averageDurationSeconds">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Среднее время, с</th>
+      <td mat-cell *matCellDef="let row">{{ row.averageDurationSeconds | number }}</td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="columns"></tr>
+    <tr mat-row *matRowDef="let row; columns: columns"></tr>
+  </table>
+</div>

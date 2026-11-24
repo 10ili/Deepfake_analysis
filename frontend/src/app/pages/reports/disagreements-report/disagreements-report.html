@@ -1,0 +1,29 @@
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+<div class="cards">
+  @for (item of items(); track item.imageId) {
+    <mat-card appearance="outlined">
+      <img mat-card-image [alt]="item.fileName" [src]="fileUrl(item)" />
+      <mat-card-content>
+        <a class="name" [routerLink]="['/images', item.imageId]">{{ item.fileName }}</a>
+        @for (verdict of item.verdicts; track $index) {
+          <div class="verdict">
+            <span>{{ verdict.detectorName }}</span>
+            <span [class.generated]="verdict.verdict === 'Generated'">
+              {{ verdictLabels[verdict.verdict] }}
+            </span>
+            <span class="probability">
+              подлинность {{ verdict.realProbability | percent: '1.2-2' }}
+            </span>
+          </div>
+        }
+      </mat-card-content>
+    </mat-card>
+  }
+</div>
+
+@if (loaded() && items().length === 0) {
+  <p class="empty">Детекторы ни разу не разошлись во мнениях</p>
+}
