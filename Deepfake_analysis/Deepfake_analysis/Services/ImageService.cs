@@ -17,16 +17,22 @@ namespace Deepfake_analysis.Services
 
     public class ImageService(AppDbContext db) : IImageService
     {
-        public Task<List<ImageRecord>> GetAllAsync(string? search, string? extension)
+        public async Task<List<ImageRecord>> GetAllAsync(string? search, string? extension)
         {
             var ending = extension == null ? null : "." + extension.TrimStart('.').ToLower();
 
-            // Where и OrderBy здесь не выполняются в памяти: EF Core переводит их в SQL-запрос.
-            return db.Images
-                .Where(i => search == null || i.FileName.ToLower().Contains(search.ToLower()))
+            // Where и OrderBy в этом запросе не выполняются в памяти: EF Core переводит их в SQL.
+            var images = await db.Images
                 .Where(i => ending == null || i.FileName.ToLower().EndsWith(ending))
                 .OrderByDescending(i => i.UploadedAt)
                 .ToListAsync();
+
+            if (search == null)
+                return images;
+
+            return images
+                .Where(i => i.FileName.Contains(search, StringComparison.OrdinalIgnoreCase))
+                .ToList();
         }
 
         public async Task<ImageRecord> GetAsync(int id) =>
