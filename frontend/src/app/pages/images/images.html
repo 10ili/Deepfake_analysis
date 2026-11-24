@@ -1,1 +1,134 @@
-<h1>Изображения</h1>
+<div class="title">
+  <h1>Изображения</h1>
+  @if (isAdmin()) {
+    <button matButton="filled" (click)="file.click()">
+      <mat-icon>upload</mat-icon>
+      Загрузить
+    </button>
+    <input #file type="file" accept=".jpg,.jpeg,.png" hidden (change)="upload($event)" />
+  }
+</div>
+
+<form class="filters" [formGroup]="form">
+  <mat-form-field class="search" subscriptSizing="dynamic">
+    <mat-label>Поиск по имени</mat-label>
+    <input matInput formControlName="search" />
+    <mat-icon matSuffix>search</mat-icon>
+  </mat-form-field>
+
+  <mat-form-field class="extension" subscriptSizing="dynamic">
+    <mat-label>Формат</mat-label>
+    <mat-select formControlName="extension">
+      <mat-option value="">Все</mat-option>
+      <mat-option value="jpg">JPG</mat-option>
+      <mat-option value="jpeg">JPEG</mat-option>
+      <mat-option value="png">PNG</mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <mat-button-toggle-group
+    class="view"
+    aria-label="Вид списка"
+    [value]="view()"
+    (change)="view.set($event.value)"
+  >
+    <mat-button-toggle value="table" aria-label="Таблица">
+      <mat-icon>table_rows</mat-icon>
+    </mat-button-toggle>
+    <mat-button-toggle value="cards" aria-label="Карточки">
+      <mat-icon>grid_view</mat-icon>
+    </mat-button-toggle>
+  </mat-button-toggle-group>
+</form>
+
+<div class="progress">
+  @if (loading()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+</div>
+
+@if (view() === 'table') {
+  <div class="table">
+    <table
+      mat-table
+      matSort
+      [dataSource]="sortedImages()"
+      [matSortActive]="sort().active"
+      [matSortDirection]="sort().direction"
+      (matSortChange)="sort.set($event)"
+    >
+      <ng-container matColumnDef="preview">
+        <th mat-header-cell *matHeaderCellDef></th>
+        <td mat-cell *matCellDef="let image">
+          <img class="preview" loading="lazy" alt="" [src]="fileUrl(image)" />
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="fileName">
+        <th mat-header-cell mat-sort-header *matHeaderCellDef>Имя файла</th>
+        <td mat-cell *matCellDef="let image">
+          <a [routerLink]="['/images', image.id]">{{ image.fileName }}</a>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="sizeBytes">
+        <th mat-header-cell mat-sort-header *matHeaderCellDef>Размер</th>
+        <td mat-cell *matCellDef="let image">{{ image.sizeBytes | fileSize }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="megapixels">
+        <th mat-header-cell mat-sort-header *matHeaderCellDef>Разрешение</th>
+        <td mat-cell *matCellDef="let image">{{ image.width }} × {{ image.height }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="uploadedAt">
+        <th mat-header-cell mat-sort-header *matHeaderCellDef>Загружено</th>
+        <td mat-cell *matCellDef="let image">{{ image.uploadedAt | date: 'dd.MM.yyyy HH:mm' }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="actions">
+        <th mat-header-cell *matHeaderCellDef></th>
+        <td mat-cell class="actions" *matCellDef="let image">
+          <button matIconButton aria-label="Переименовать" (click)="rename(image)">
+            <mat-icon>edit</mat-icon>
+          </button>
+          <button matIconButton aria-label="Удалить" (click)="delete(image)">
+            <mat-icon>delete</mat-icon>
+          </button>
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="columns()"></tr>
+      <tr mat-row *matRowDef="let row; columns: columns()"></tr>
+    </table>
+  </div>
+} @else {
+  <div class="cards">
+    @for (image of sortedImages(); track image.id) {
+      <mat-card appearance="outlined">
+        <a [routerLink]="['/images', image.id]">
+          <img mat-card-image loading="lazy" [alt]="image.fileName" [src]="fileUrl(image)" />
+        </a>
+        <mat-card-content>
+          <a class="name" [routerLink]="['/images', image.id]">{{ image.fileName }}</a>
+          <div>{{ image.width }} × {{ image.height }}, {{ image.sizeBytes | fileSize }}</div>
+          <div>{{ image.uploadedAt | date: 'dd.MM.yyyy HH:mm' }}</div>
+        </mat-card-content>
+        @if (isAdmin()) {
+          <mat-card-actions align="end">
+            <button matIconButton aria-label="Переименовать" (click)="rename(image)">
+              <mat-icon>edit</mat-icon>
+            </button>
+            <button matIconButton aria-label="Удалить" (click)="delete(image)">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </mat-card-actions>
+        }
+      </mat-card>
+    }
+  </div>
+}
+
+@if (!loading() && images().length === 0) {
+  <p class="empty">Ничего не найдено</p>
+}

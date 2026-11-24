@@ -1,0 +1,6 @@
+<h2 mat-dialog-title>Подтверждение</h2>
+<mat-dialog-content>{{ message }}</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button matButton mat-dialog-close>Отмена</button>
+  <button matButton="filled" [mat-dialog-close]="true">Удалить</button>
+</mat-dialog-actions>

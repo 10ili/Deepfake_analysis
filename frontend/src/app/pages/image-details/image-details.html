@@ -1,0 +1,40 @@
+<a matButton routerLink="/images">
+  <mat-icon>arrow_back</mat-icon>
+  К списку
+</a>
+
+@if (image(); as image) {
+  <h1>{{ image.fileName }}</h1>
+
+  <div class="content">
+    <img [src]="fileUrl" [alt]="image.fileName" />
+
+    <div>
+      <dl>
+        <dt>Формат</dt>
+        <dd>{{ image.contentType }}</dd>
+        <dt>Размер</dt>
+        <dd>{{ image.sizeBytes | fileSize }}</dd>
+        <dt>Разрешение</dt>
+        <dd>{{ image.width }} × {{ image.height }} ({{ image.megapixels | number }} Мп)</dd>
+        <dt>Загружено</dt>
+        <dd>{{ image.uploadedAt | date: 'dd.MM.yyyy HH:mm' }}</dd>
+      </dl>
+
+      @if (isAdmin()) {
+        <div class="buttons">
+          <button matButton="outlined" (click)="rename(image)">
+            <mat-icon>edit</mat-icon>
+            Переименовать
+          </button>
+          <button matButton="outlined" (click)="delete(image)">
+            <mat-icon>delete</mat-icon>
+            Удалить
+          </button>
+        </div>
+      }
+    </div>
+  </div>
+} @else if (error()) {
+  <p>{{ error() }}</p>
+}

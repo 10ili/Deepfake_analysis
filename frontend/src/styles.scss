@@ -36,4 +36,7 @@ body {
   margin: 0;
   height: 100%;
 }
-/* You can add global styles to this file, and also import other style files */
+
+a {
+  color: var(--mat-sys-primary);
+}

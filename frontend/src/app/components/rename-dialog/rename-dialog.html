@@ -1,0 +1,19 @@
+<h2 mat-dialog-title>Переименовать</h2>
+<mat-dialog-content>
+  <mat-form-field>
+    <mat-label>Имя файла</mat-label>
+    <input matInput [formControl]="name" (keydown.enter)="save()" />
+    <span matTextSuffix>{{ extension }}</span>
+    @if (name.hasError('required')) {
+      <mat-error>Введите имя файла</mat-error>
+    } @else if (name.hasError('maxlength')) {
+      <mat-error>Слишком длинное имя</mat-error>
+    } @else if (name.hasError('pattern')) {
+      <mat-error>Недопустимое имя файла</mat-error>
+    }
+  </mat-form-field>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button matButton mat-dialog-close>Отмена</button>
+  <button matButton="filled" [disabled]="name.invalid" (click)="save()">Сохранить</button>
+</mat-dialog-actions>

@@ -1,0 +1,43 @@
+h1 {
+  overflow-wrap: anywhere;
+}
+
+.content {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 32px;
+  align-items: start;
+
+  img {
+    max-width: 100%;
+    max-height: 70vh;
+    border-radius: 8px;
+  }
+}
+
+dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 24px;
+  margin: 0 0 24px;
+}
+
+dt {
+  color: var(--mat-sys-on-surface-variant);
+}
+
+dd {
+  margin: 0;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 800px) {
+  .content {
+    grid-template-columns: 1fr;
+  }
+}
