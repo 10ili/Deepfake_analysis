@@ -1,0 +1,22 @@
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 480px;
+}
+
+mat-slide-toggle {
+  margin-top: 12px;
+}
+
+.error {
+  margin: 0;
+  color: var(--mat-sys-error);
+}
+
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

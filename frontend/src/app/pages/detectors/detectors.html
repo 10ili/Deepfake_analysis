@@ -1,1 +1,81 @@
-<h1>Детекторы</h1>
+<div class="title">
+  <h1>Детекторы</h1>
+  @if (isAdmin()) {
+    <a matButton="filled" routerLink="/detectors/new">
+      <mat-icon>add</mat-icon>
+      Добавить
+    </a>
+  }
+</div>
+
+<mat-form-field subscriptSizing="dynamic">
+  <mat-label>Состояние</mat-label>
+  <mat-select [value]="active()" (selectionChange)="setActive($event.value)">
+    <mat-option [value]="undefined">Все</mat-option>
+    <mat-option [value]="true">Включённые</mat-option>
+    <mat-option [value]="false">Отключённые</mat-option>
+  </mat-select>
+</mat-form-field>
+
+<div class="progress">
+  @if (loading()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+</div>
+
+<div class="table">
+  <table
+    mat-table
+    matSort
+    [dataSource]="sortedDetectors()"
+    [matSortActive]="sort().active"
+    [matSortDirection]="sort().direction"
+    (matSortChange)="sort.set($event)"
+  >
+    <ng-container matColumnDef="name">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Название</th>
+      <td mat-cell *matCellDef="let detector">{{ detector.name }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="model">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Модель</th>
+      <td mat-cell *matCellDef="let detector">{{ modelLabel(detector.model) }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="threshold">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Порог</th>
+      <td mat-cell *matCellDef="let detector">{{ detector.threshold | number: '1.2-4' }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="hasHeatmap">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Тепловая карта</th>
+      <td mat-cell *matCellDef="let detector">{{ detector.hasHeatmap ? 'Есть' : 'Нет' }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="isActive">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Состояние</th>
+      <td mat-cell *matCellDef="let detector">
+        {{ detector.isActive ? 'Включён' : 'Отключён' }}
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="actions">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell class="actions" *matCellDef="let detector">
+        <a matIconButton aria-label="Изменить" [routerLink]="['/detectors', detector.id, 'edit']">
+          <mat-icon>edit</mat-icon>
+        </a>
+        <button matIconButton aria-label="Удалить" (click)="delete(detector)">
+          <mat-icon>delete</mat-icon>
+        </button>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="columns()"></tr>
+    <tr mat-row *matRowDef="let row; columns: columns()"></tr>
+  </table>
+</div>
+
+@if (!loading() && detectors().length === 0) {
+  <p class="empty">Ничего не найдено</p>
+}

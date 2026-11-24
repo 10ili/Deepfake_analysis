@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { adminGuard } from './guards/admin-guard';
 import { authGuard } from './guards/auth-guard';
 
 export const routes: Routes = [
@@ -27,6 +28,18 @@ export const routes: Routes = [
     path: 'detectors',
     title: 'Детекторы',
     loadComponent: () => import('./pages/detectors/detectors').then((m) => m.Detectors),
+  },
+  {
+    path: 'detectors/new',
+    title: 'Новый детектор',
+    canActivate: [adminGuard],
+    loadComponent: () => import('./pages/detector-form/detector-form').then((m) => m.DetectorForm),
+  },
+  {
+    path: 'detectors/:id/edit',
+    title: 'Изменение детектора',
+    canActivate: [adminGuard],
+    loadComponent: () => import('./pages/detector-form/detector-form').then((m) => m.DetectorForm),
   },
   {
     path: 'reports',

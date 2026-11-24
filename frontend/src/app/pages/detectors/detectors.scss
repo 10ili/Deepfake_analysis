@@ -1,0 +1,26 @@
+.title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.progress {
+  height: 4px;
+  margin: 12px 0;
+}
+
+.table {
+  overflow-x: auto;
+}
+
+.actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.empty {
+  padding: 32px;
+  color: var(--mat-sys-on-surface-variant);
+  text-align: center;
+}

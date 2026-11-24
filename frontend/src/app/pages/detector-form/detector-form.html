@@ -1,0 +1,42 @@
+<h1>{{ id ? 'Изменение детектора' : 'Новый детектор' }}</h1>
+
+<form [formGroup]="form" (ngSubmit)="save()">
+  <mat-form-field>
+    <mat-label>Название</mat-label>
+    <input matInput formControlName="name" />
+    @if (form.controls.name.hasError('maxlength')) {
+      <mat-error>Не больше 100 символов</mat-error>
+    } @else if (form.controls.name.invalid) {
+      <mat-error>Введите название</mat-error>
+    }
+  </mat-form-field>
+
+  <mat-form-field>
+    <mat-label>Модель</mat-label>
+    <mat-select formControlName="model">
+      @for (model of models; track model) {
+        <mat-option [value]="model">{{ modelLabels[model] }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field>
+    <mat-label>Порог</mat-label>
+    <input matInput type="number" step="0.01" min="0.01" max="0.99" formControlName="threshold" />
+    <mat-hint>Если вероятность подлинности не выше порога, изображение сгенерировано</mat-hint>
+    @if (form.controls.threshold.invalid) {
+      <mat-error>Введите число от 0,01 до 0,99</mat-error>
+    }
+  </mat-form-field>
+
+  <mat-slide-toggle formControlName="isActive">Включён</mat-slide-toggle>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+
+  <div class="buttons">
+    <a matButton routerLink="/detectors">Отмена</a>
+    <button matButton="filled" type="submit" [disabled]="saving()">Сохранить</button>
+  </div>
+</form>
