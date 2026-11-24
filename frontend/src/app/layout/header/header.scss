@@ -32,12 +32,23 @@ nav {
   background-color: var(--mat-sys-secondary-container);
 }
 
-.menu-button {
-  display: none;
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
 }
 
-@media (max-width: 800px) {
+.role {
+  padding: 8px 12px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.menu-button {
+  display: none;
+}
+
+@media (max-width: 960px) {
   header {
     padding: 0 16px;
   }
@@ -48,5 +59,11 @@ nav {
 
   .menu-button {
     display: block;
+  }
+}
+
+@media (max-width: 450px) {
+  .logo span {
+    display: none;
   }
 }

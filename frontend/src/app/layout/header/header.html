@@ -13,15 +13,33 @@
     }
   </nav>
 
-  <button class="menu-button" matIconButton [matMenuTriggerFor]="menu" aria-label="Меню">
-    <mat-icon>menu</mat-icon>
-  </button>
-  <mat-menu #menu="matMenu">
-    @for (link of links; track link.path) {
-      <a mat-menu-item [routerLink]="link.path">
-        <mat-icon>{{ link.icon }}</mat-icon>
-        <span>{{ link.title }}</span>
-      </a>
+  <div class="actions">
+    @if (user(); as user) {
+      <button matButton [matMenuTriggerFor]="userMenu">
+        <mat-icon>account_circle</mat-icon>
+        {{ user.login }}
+      </button>
+      <mat-menu #userMenu="matMenu">
+        <div class="role">{{ isAdmin() ? 'Администратор' : 'Пользователь' }}</div>
+        <button mat-menu-item (click)="logout()">
+          <mat-icon>logout</mat-icon>
+          <span>Выйти</span>
+        </button>
+      </mat-menu>
+    } @else {
+      <a matButton="outlined" routerLink="/login">Войти</a>
     }
-  </mat-menu>
+
+    <button class="menu-button" matIconButton [matMenuTriggerFor]="menu" aria-label="Меню">
+      <mat-icon>menu</mat-icon>
+    </button>
+    <mat-menu #menu="matMenu">
+      @for (link of links; track link.path) {
+        <a mat-menu-item [routerLink]="link.path">
+          <mat-icon>{{ link.icon }}</mat-icon>
+          <span>{{ link.title }}</span>
+        </a>
+      }
+    </mat-menu>
+  </div>
 </header>
