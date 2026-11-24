@@ -1,0 +1,27 @@
+<header>
+  <a class="logo" routerLink="/">
+    <img src="logo.svg" alt="" />
+    <span>Deepfake analysis</span>
+  </a>
+
+  <nav>
+    @for (link of links; track link.path) {
+      <a matButton [routerLink]="link.path" routerLinkActive="active">
+        <mat-icon>{{ link.icon }}</mat-icon>
+        {{ link.title }}
+      </a>
+    }
+  </nav>
+
+  <button class="menu-button" matIconButton [matMenuTriggerFor]="menu" aria-label="Меню">
+    <mat-icon>menu</mat-icon>
+  </button>
+  <mat-menu #menu="matMenu">
+    @for (link of links; track link.path) {
+      <a mat-menu-item [routerLink]="link.path">
+        <mat-icon>{{ link.icon }}</mat-icon>
+        <span>{{ link.title }}</span>
+      </a>
+    }
+  </mat-menu>
+</header>

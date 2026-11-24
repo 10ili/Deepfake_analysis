@@ -1,0 +1,11 @@
+footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 24px;
+  color: var(--mat-sys-on-surface-variant);
+  border-top: 1px solid var(--mat-sys-outline-variant);
+
+  a {
+    color: var(--mat-sys-primary);
+  }
+}

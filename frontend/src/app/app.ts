@@ -1,13 +1,12 @@
-import { Component, signal } from '@angular/core';
+import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
-import { MatButtonModule } from '@angular/material/button';
+import { Footer } from './layout/footer/footer';
+import { Header } from './layout/header/header';
 
 @Component({
-  imports: [RouterOutlet, MatButtonModule],
+  imports: [RouterOutlet, Header, Footer],
   selector: 'app-root',
   styleUrl: './app.scss',
   templateUrl: './app.html',
 })
-export class App {
-  protected readonly title = signal('frontend');
-}
+export class App {}
