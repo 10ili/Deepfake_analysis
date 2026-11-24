@@ -1,1 +1,133 @@
-<h1>Анализы</h1>
+<div class="title">
+  <h1>Анализы</h1>
+  @if (isAdmin()) {
+    <button matButton="filled" (click)="start()">
+      <mat-icon>play_arrow</mat-icon>
+      Новый анализ
+    </button>
+  }
+</div>
+
+<form class="filters" [formGroup]="form">
+  <mat-form-field subscriptSizing="dynamic">
+    <mat-label>Изображение</mat-label>
+    <mat-select formControlName="imageId">
+      <mat-option [value]="null">Все</mat-option>
+      @for (image of images(); track image.id) {
+        <mat-option [value]="image.id">{{ image.fileName }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field subscriptSizing="dynamic">
+    <mat-label>Детектор</mat-label>
+    <mat-select formControlName="detectorId">
+      <mat-option [value]="null">Все</mat-option>
+      @for (detector of detectors(); track detector.id) {
+        <mat-option [value]="detector.id">{{ detector.name }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field subscriptSizing="dynamic">
+    <mat-label>Вердикт</mat-label>
+    <mat-select formControlName="verdict">
+      <mat-option [value]="null">Все</mat-option>
+      @for (verdict of verdicts; track verdict) {
+        <mat-option [value]="verdict">{{ verdictLabels[verdict] }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field subscriptSizing="dynamic">
+    <mat-label>Статус</mat-label>
+    <mat-select formControlName="status">
+      <mat-option [value]="null">Все</mat-option>
+      @for (status of statuses; track status) {
+        <mat-option [value]="status">{{ statusLabels[status] }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <button matIconButton type="button" aria-label="Обновить" (click)="reload.next()">
+    <mat-icon>refresh</mat-icon>
+  </button>
+</form>
+
+<div class="progress">
+  @if (loading()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+</div>
+
+<div class="table">
+  <table
+    mat-table
+    matSort
+    [dataSource]="rows()"
+    [matSortActive]="sort().active"
+    [matSortDirection]="sort().direction"
+    (matSortChange)="sort.set($event)"
+  >
+    <ng-container matColumnDef="id">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>№</th>
+      <td mat-cell *matCellDef="let row">
+        <a [routerLink]="['/analyses', row.id]">{{ row.id }}</a>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="fileName">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Изображение</th>
+      <td mat-cell *matCellDef="let row">
+        <a [routerLink]="['/analyses', row.id]">{{ row.fileName }}</a>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="detectorName">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Детектор</th>
+      <td mat-cell *matCellDef="let row">{{ row.detectorName }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="status">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Статус</th>
+      <td mat-cell *matCellDef="let row">{{ statusLabel(row.status) }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="verdict">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Вердикт</th>
+      <td mat-cell *matCellDef="let row">
+        @if (row.verdict) {
+          <span [class.generated]="row.verdict === 'Generated'">
+            {{ verdictLabel(row.verdict) }}
+          </span>
+        }
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="generatedProbability">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Вероятность генерации</th>
+      <td mat-cell *matCellDef="let row">{{ row.generatedProbability | percent: '1.2-2' }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="createdAt">
+      <th mat-header-cell mat-sort-header *matHeaderCellDef>Создан</th>
+      <td mat-cell *matCellDef="let row">{{ row.createdAt | date: 'dd.MM.yyyy HH:mm' }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="actions">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell class="actions" *matCellDef="let row">
+        <button matIconButton aria-label="Удалить" (click)="delete(row)">
+          <mat-icon>delete</mat-icon>
+        </button>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="columns()"></tr>
+    <tr mat-row *matRowDef="let row; columns: columns()"></tr>
+  </table>
+</div>
+
+@if (!loading() && analyses().length === 0) {
+  <p class="empty">Ничего не найдено</p>
+}

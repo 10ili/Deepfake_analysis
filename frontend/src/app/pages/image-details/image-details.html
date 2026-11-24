@@ -21,8 +21,16 @@
         <dd>{{ image.uploadedAt | date: 'dd.MM.yyyy HH:mm' }}</dd>
       </dl>
 
-      @if (isAdmin()) {
-        <div class="buttons">
+      <div class="buttons">
+        <a matButton="outlined" routerLink="/analyses" [queryParams]="{ imageId: image.id }">
+          <mat-icon>query_stats</mat-icon>
+          Анализы
+        </a>
+        @if (isAdmin()) {
+          <button matButton="filled" (click)="analyze(image)">
+            <mat-icon>play_arrow</mat-icon>
+            Проверить
+          </button>
           <button matButton="outlined" (click)="rename(image)">
             <mat-icon>edit</mat-icon>
             Переименовать
@@ -31,8 +39,8 @@
             <mat-icon>delete</mat-icon>
             Удалить
           </button>
-        </div>
-      }
+        }
+      </div>
     </div>
   </div>
 } @else if (error()) {

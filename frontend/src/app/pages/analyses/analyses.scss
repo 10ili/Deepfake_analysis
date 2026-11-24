@@ -1,0 +1,41 @@
+.title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+
+  mat-form-field {
+    flex: 1;
+    min-width: 180px;
+  }
+}
+
+.progress {
+  height: 4px;
+  margin: 12px 0;
+}
+
+.table {
+  overflow-x: auto;
+}
+
+.generated {
+  color: var(--mat-sys-error);
+}
+
+.actions {
+  text-align: right;
+}
+
+.empty {
+  padding: 32px;
+  color: var(--mat-sys-on-surface-variant);
+  text-align: center;
+}

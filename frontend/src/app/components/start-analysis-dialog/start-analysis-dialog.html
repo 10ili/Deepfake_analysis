@@ -1,0 +1,34 @@
+<h2 mat-dialog-title>Новый анализ</h2>
+<mat-dialog-content [formGroup]="form">
+  <mat-form-field>
+    <mat-label>Изображение</mat-label>
+    <mat-select formControlName="imageId">
+      @for (image of images(); track image.id) {
+        <mat-option [value]="image.id">{{ image.fileName }}</mat-option>
+      }
+    </mat-select>
+    @if (form.controls.imageId.invalid) {
+      <mat-error>Выберите изображение</mat-error>
+    }
+  </mat-form-field>
+
+  <mat-form-field>
+    <mat-label>Детектор</mat-label>
+    <mat-select formControlName="detectorId">
+      @for (detector of detectors(); track detector.id) {
+        <mat-option [value]="detector.id">{{ detector.name }}</mat-option>
+      }
+    </mat-select>
+    @if (form.controls.detectorId.invalid) {
+      <mat-error>Выберите детектор</mat-error>
+    }
+  </mat-form-field>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button matButton mat-dialog-close>Отмена</button>
+  <button matButton="filled" [disabled]="saving()" (click)="start()">Запустить</button>
+</mat-dialog-actions>

@@ -25,10 +25,10 @@ export interface AnalysisResult {
 }
 
 export interface AnalysisFilter {
-  imageId?: number;
-  detectorId?: number;
-  verdict?: Verdict;
-  status?: AnalysisStatus;
+  imageId: number | null;
+  detectorId: number | null;
+  verdict: Verdict | null;
+  status: AnalysisStatus | null;
 }
 
 export interface AnalysisRequest {

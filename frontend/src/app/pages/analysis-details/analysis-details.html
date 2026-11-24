@@ -1,0 +1,91 @@
+<a matButton routerLink="/analyses">
+  <mat-icon>arrow_back</mat-icon>
+  К списку
+</a>
+
+@if (analysis(); as analysis) {
+  <h1>Анализ №{{ analysis.id }}</h1>
+
+  @if (pending()) {
+    <p>{{ statusLabels[analysis.status] }}, результат появится автоматически</p>
+    <mat-progress-bar mode="indeterminate" />
+  }
+
+  <div class="content">
+    <div>
+      @if (analysis.hasHeatmap) {
+        <mat-button-toggle-group
+          aria-label="Вид изображения"
+          [value]="picture()"
+          (change)="picture.set($event.value)"
+        >
+          <mat-button-toggle value="original">Оригинал</mat-button-toggle>
+          <mat-button-toggle value="overlay">Наложение</mat-button-toggle>
+          <mat-button-toggle value="heatmap">Карта</mat-button-toggle>
+        </mat-button-toggle-group>
+      }
+      <img alt="" [src]="pictureUrl()" />
+    </div>
+
+    <div>
+      @if (analysis.verdict) {
+        <p class="verdict" [class.generated]="analysis.verdict === 'Generated'">
+          {{ verdictLabels[analysis.verdict] }}
+        </p>
+      }
+      @if (analysis.error) {
+        <p class="error">{{ analysis.error }}</p>
+      }
+
+      <dl>
+        <dt>Изображение</dt>
+        <dd>
+          <a [routerLink]="['/images', analysis.imageId]">{{ image()?.fileName }}</a>
+        </dd>
+        <dt>Детектор</dt>
+        <dd>{{ detector()?.name }}</dd>
+        <dt>Статус</dt>
+        <dd>{{ statusLabels[analysis.status] }}</dd>
+        <dt>Создан</dt>
+        <dd>{{ analysis.createdAt | date: 'dd.MM.yyyy HH:mm:ss' }}</dd>
+
+        @if (analysis.status === 'Completed') {
+          <dt>Длительность</dt>
+          <dd>{{ analysis.durationSeconds | number }} с</dd>
+          <dt>Вероятность генерации</dt>
+          <dd>{{ analysis.generatedProbability | percent: '1.2-2' }}</dd>
+          <dt>Вероятность подлинности</dt>
+          <dd>{{ analysis.realProbability | percent: '1.2-2' }}</dd>
+          <dt>Порог детектора</dt>
+          <dd>{{ detector()?.threshold | number: '1.2-4' }}</dd>
+        }
+
+        @if (analysis.hasHeatmap) {
+          <dt>Энтропия</dt>
+          <dd>{{ analysis.entropy | number: '1.2-4' }}</dd>
+          <dt>Концентрация</dt>
+          <dd>{{ analysis.concentration | number: '1.2-4' }}</dd>
+          <dt>Отклонение</dt>
+          <dd>{{ analysis.stdDeviation | number: '1.2-4' }}</dd>
+          @if (analysis.criticalRegion) {
+            <dt>Критическая зона</dt>
+            <dd>{{ regionLabels[analysis.criticalRegion] }}</dd>
+          }
+          @if (analysis.anomalyType) {
+            <dt>Тип аномалии</dt>
+            <dd>{{ anomalyLabels[analysis.anomalyType] }}</dd>
+          }
+        }
+      </dl>
+
+      @if (isAdmin()) {
+        <button matButton="outlined" [disabled]="analysis.status === 'Running'" (click)="delete()">
+          <mat-icon>delete</mat-icon>
+          Удалить
+        </button>
+      }
+    </div>
+  </div>
+} @else if (error()) {
+  <p>{{ error() }}</p>
+}

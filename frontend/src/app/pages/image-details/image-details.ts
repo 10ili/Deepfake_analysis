@@ -8,6 +8,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { RenameDialog } from '../../components/rename-dialog/rename-dialog';
+import { StartAnalysisDialog } from '../../components/start-analysis-dialog/start-analysis-dialog';
 import { ImageRecord } from '../../models/image';
 import { FileSizePipe } from '../../pipes/file-size-pipe';
 import { AuthService } from '../../services/auth-service';
@@ -37,6 +38,10 @@ export class ImageDetails {
       next: (image) => this.image.set(image),
       error: (error) => this.error.set(errorMessage(error)),
     });
+  }
+
+  analyze(image: ImageRecord) {
+    this.dialog.open(StartAnalysisDialog, { data: image.id, width: '440px' });
   }
 
   rename(image: ImageRecord) {

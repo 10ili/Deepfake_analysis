@@ -8,7 +8,7 @@ export class AnalysisService {
   private http = inject(HttpClient);
   private url = `${environment.apiUrl}/analyses`;
 
-  getAll(filter: AnalysisFilter = {}) {
+  getAll(filter: AnalysisFilter) {
     let params = new HttpParams();
     for (const [key, value] of Object.entries(filter)) {
       if (value) {

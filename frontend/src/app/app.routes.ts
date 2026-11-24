@@ -25,6 +25,12 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/analyses/analyses').then((m) => m.Analyses),
   },
   {
+    path: 'analyses/:id',
+    title: 'Анализ',
+    loadComponent: () =>
+      import('./pages/analysis-details/analysis-details').then((m) => m.AnalysisDetails),
+  },
+  {
     path: 'detectors',
     title: 'Детекторы',
     loadComponent: () => import('./pages/detectors/detectors').then((m) => m.Detectors),
